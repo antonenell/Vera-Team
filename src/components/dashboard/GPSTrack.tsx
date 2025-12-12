@@ -96,7 +96,7 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
       style: "mapbox://styles/mapbox/satellite-v9",
       bounds: track.bounds,
       fitBoundsOptions: { padding: 10 },
-      interactive: false, // Lock the map
+      attributionControl: false,
     });
 
     return () => {
