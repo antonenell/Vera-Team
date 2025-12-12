@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MapPin, Flag, RotateCcw } from "lucide-react";
+import { MapPin, Flag, RotateCcw, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +15,7 @@ interface GPSTrackProps {
 }
 
 type FlagColor = "grey" | "yellow" | "red" | "black";
+type TrackName = "stora-holm" | "silesia-ring";
 
 interface TurnFlag {
   id: number;
@@ -22,6 +23,37 @@ interface TurnFlag {
   y: number;
   color: FlagColor;
 }
+
+interface TrackConfig {
+  name: string;
+  path: string;
+  startLine: { x1: number; y1: number; x2: number; y2: number };
+  defaultFlags: Omit<TurnFlag, "color">[];
+}
+
+const tracks: Record<TrackName, TrackConfig> = {
+  "stora-holm": {
+    name: "Stora Holm",
+    path: "M 20,30 L 35,20 L 65,20 L 80,30 L 80,45 L 65,55 L 50,50 L 35,55 L 20,45 Z",
+    startLine: { x1: 20, y1: 25, x2: 20, y2: 35 },
+    defaultFlags: [
+      { id: 1, x: 35, y: (20 / 70) * 100 },
+      { id: 2, x: 65, y: (20 / 70) * 100 },
+      { id: 3, x: 50, y: (50 / 70) * 100 },
+    ],
+  },
+  "silesia-ring": {
+    name: "Silesia Ring",
+    path: "M 15,35 L 30,15 L 70,15 L 85,25 L 85,40 L 70,50 L 85,60 L 70,70 L 30,70 L 15,55 Z",
+    startLine: { x1: 15, y1: 30, x2: 15, y2: 40 },
+    defaultFlags: [
+      { id: 1, x: 30, y: (15 / 70) * 100 },
+      { id: 2, x: 70, y: (15 / 70) * 100 },
+      { id: 3, x: 70, y: (50 / 70) * 100 },
+      { id: 4, x: 70, y: (70 / 70) * 100 },
+    ],
+  },
+};
 
 const flagColors: Record<FlagColor, string> = {
   grey: "hsl(var(--muted-foreground))",
@@ -38,25 +70,34 @@ const flagLabels: Record<FlagColor, string> = {
 };
 
 const GPSTrack = ({ position, className }: GPSTrackProps) => {
-  // Closed track with multiple turns
-  const trackPath = "M 20,30 L 35,20 L 65,20 L 80,30 L 80,45 L 65,55 L 50,50 L 35,55 L 20,45 Z";
+  const [selectedTrack, setSelectedTrack] = useState<TrackName>("stora-holm");
+  const track = tracks[selectedTrack];
   
-  // Turn positions for flags (percentages based on viewBox 100x70)
-  // Track points: (35,20), (65,20), (80,30), (80,45), (65,55), (50,50), (35,55), (20,45), (20,30)
-  const [flags, setFlags] = useState<TurnFlag[]>([
-    { id: 1, x: 35, y: (20 / 70) * 100, color: "grey" },  // top-left turn
-    { id: 2, x: 65, y: (20 / 70) * 100, color: "grey" },  // top-right turn
-    { id: 3, x: 50, y: (50 / 70) * 100, color: "grey" },  // center turn
-  ]);
+  const [flags, setFlags] = useState<Record<TrackName, TurnFlag[]>>({
+    "stora-holm": tracks["stora-holm"].defaultFlags.map(f => ({ ...f, color: "grey" as FlagColor })),
+    "silesia-ring": tracks["silesia-ring"].defaultFlags.map(f => ({ ...f, color: "grey" as FlagColor })),
+  });
+
+  const currentFlags = flags[selectedTrack];
 
   const updateFlagColor = (flagId: number, color: FlagColor) => {
-    setFlags(prev => prev.map(flag => 
-      flag.id === flagId ? { ...flag, color } : flag
-    ));
+    setFlags(prev => ({
+      ...prev,
+      [selectedTrack]: prev[selectedTrack].map(flag => 
+        flag.id === flagId ? { ...flag, color } : flag
+      ),
+    }));
   };
 
   const resetFlags = () => {
-    setFlags(prev => prev.map(flag => ({ ...flag, color: "grey" as FlagColor })));
+    setFlags(prev => ({
+      ...prev,
+      [selectedTrack]: prev[selectedTrack].map(flag => ({ ...flag, color: "grey" as FlagColor })),
+    }));
+  };
+
+  const handleTrackChange = (trackName: TrackName) => {
+    setSelectedTrack(trackName);
   };
 
   return (
@@ -64,9 +105,28 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <MapPin className="w-5 h-5 text-racing-green" strokeWidth={1.5} />
-          <p className="text-muted-foreground text-sm font-medium uppercase tracking-wide">
-            Track Position
-          </p>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center gap-1 text-muted-foreground text-sm font-medium uppercase tracking-wide hover:text-foreground transition-colors">
+                {track.name}
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="bg-card border-border z-50">
+              {(Object.keys(tracks) as TrackName[]).map((trackKey) => (
+                <DropdownMenuItem
+                  key={trackKey}
+                  onClick={() => handleTrackChange(trackKey)}
+                  className={cn(
+                    "cursor-pointer",
+                    selectedTrack === trackKey && "bg-muted"
+                  )}
+                >
+                  {tracks[trackKey].name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <Button
           variant="ghost"
@@ -82,7 +142,7 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
         <svg viewBox="0 0 100 70" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
           {/* Track outline */}
           <path
-            d={trackPath}
+            d={track.path}
             fill="none"
             stroke="hsl(var(--border))"
             strokeWidth="8"
@@ -91,7 +151,7 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
           />
           {/* Track inner line */}
           <path
-            d={trackPath}
+            d={track.path}
             fill="none"
             stroke="hsl(var(--muted))"
             strokeWidth="1"
@@ -135,17 +195,17 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
           </circle>
           {/* Start/Finish line */}
           <line
-            x1="20"
-            y1="25"
-            x2="20"
-            y2="35"
+            x1={track.startLine.x1}
+            y1={track.startLine.y1}
+            x2={track.startLine.x2}
+            y2={track.startLine.y2}
             stroke="hsl(var(--foreground))"
             strokeWidth="2"
           />
         </svg>
         
         {/* Interactive Flags */}
-        {flags.map((flag) => (
+        {currentFlags.map((flag) => (
           <DropdownMenu key={flag.id}>
             <DropdownMenuTrigger asChild>
               <button
