@@ -1,9 +1,13 @@
-import { Clock } from "lucide-react";
+import { Clock, Play, Pause, Flag } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 interface RaceTimerProps {
   timeLeftSeconds: number;
   totalSeconds: number;
+  isRunning: boolean;
+  onStartStop: () => void;
+  onLap: () => void;
   className?: string;
 }
 
@@ -13,7 +17,14 @@ const formatTime = (seconds: number): string => {
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 };
 
-const RaceTimer = ({ timeLeftSeconds, totalSeconds, className }: RaceTimerProps) => {
+const RaceTimer = ({ 
+  timeLeftSeconds, 
+  totalSeconds, 
+  isRunning,
+  onStartStop,
+  onLap,
+  className 
+}: RaceTimerProps) => {
   const progress = (timeLeftSeconds / totalSeconds) * 100;
   const isLowTime = timeLeftSeconds < 300; // Less than 5 minutes
   const isCritical = timeLeftSeconds < 60; // Less than 1 minute
@@ -31,13 +42,43 @@ const RaceTimer = ({ timeLeftSeconds, totalSeconds, className }: RaceTimerProps)
         Time Remaining
       </p>
       
-      <div className="flex-1 flex flex-col justify-end">
+      <div className="flex-1 flex flex-col justify-between">
         <span className={cn(
           "text-5xl font-bold font-mono tracking-tight mb-4",
           isCritical ? "text-racing-red" : isLowTime ? "text-racing-orange" : "text-foreground"
         )}>
           {formatTime(timeLeftSeconds)}
         </span>
+        
+        {/* Controls */}
+        <div className="flex gap-2 mb-4">
+          <Button
+            onClick={onStartStop}
+            variant={isRunning ? "destructive" : "default"}
+            className="flex-1 gap-2"
+          >
+            {isRunning ? (
+              <>
+                <Pause className="w-4 h-4" />
+                Stop
+              </>
+            ) : (
+              <>
+                <Play className="w-4 h-4" />
+                Start
+              </>
+            )}
+          </Button>
+          <Button
+            onClick={onLap}
+            variant="secondary"
+            className="flex-1 gap-2"
+            disabled={!isRunning}
+          >
+            <Flag className="w-4 h-4" />
+            Lap
+          </Button>
+        </div>
         
         {/* Progress bar */}
         <div className="h-2 bg-muted rounded-full overflow-hidden">
