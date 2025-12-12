@@ -184,7 +184,9 @@ const Index = () => {
                     className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                       i < currentLap 
                         ? "bg-racing-purple text-background" 
-                        : "bg-muted text-muted-foreground"
+                        : i === currentLap
+                          ? "bg-racing-orange text-background ring-2 ring-racing-orange ring-offset-2 ring-offset-card"
+                          : "bg-muted text-muted-foreground"
                     }`}
                   >
                     {i + 1}
