@@ -38,8 +38,8 @@ interface TrackConfig {
 const tracks: Record<TrackName, TrackConfig> = {
   "stora-holm": {
     name: "Stora Holm",
-    center: [11.8985, 57.7037], // Stora Holm trafikövningsplats, Gothenburg
-    zoom: 15,
+    center: [11.9181, 57.7764], // Stora Holm trafikövningsplats, Gothenburg (57°46'35.2"N 11°55'05.1"E)
+    zoom: 16,
     defaultFlags: [
       { id: 1, x: 35, y: 28 },
       { id: 2, x: 65, y: 28 },
