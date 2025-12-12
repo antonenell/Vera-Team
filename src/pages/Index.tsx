@@ -124,7 +124,7 @@ const Index = () => {
         {/* GPS Track - Large */}
         <GPSTrack 
           position={carPosition} 
-          className="col-span-2 row-span-2" 
+          className="col-span-3 row-span-2" 
         />
 
         {/* Speed */}
