@@ -44,9 +44,7 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
   const [flags, setFlags] = useState<TurnFlag[]>([
     { id: 1, x: 35, y: 20, color: "grey" },
     { id: 2, x: 65, y: 20, color: "grey" },
-    { id: 3, x: 80, y: 37, color: "grey" },
-    { id: 4, x: 50, y: 50, color: "grey" },
-    { id: 5, x: 20, y: 37, color: "grey" },
+    { id: 3, x: 50, y: 50, color: "grey" },
   ]);
 
   const updateFlagColor = (flagId: number, color: FlagColor) => {
