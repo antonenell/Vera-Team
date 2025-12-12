@@ -1,15 +1,61 @@
-import { MapPin } from "lucide-react";
+import { useState } from "react";
+import { MapPin, Flag } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface GPSTrackProps {
   position: { x: number; y: number };
   className?: string;
 }
 
+type FlagColor = "grey" | "yellow" | "red" | "black";
+
+interface TurnFlag {
+  id: number;
+  x: number;
+  y: number;
+  color: FlagColor;
+}
+
+const flagColors: Record<FlagColor, string> = {
+  grey: "hsl(var(--muted-foreground))",
+  yellow: "hsl(45, 93%, 47%)",
+  red: "hsl(0, 84%, 60%)",
+  black: "hsl(0, 0%, 10%)",
+};
+
+const flagLabels: Record<FlagColor, string> = {
+  grey: "Neutral",
+  yellow: "Caution",
+  red: "Danger",
+  black: "Disqualified",
+};
+
 const GPSTrack = ({ position, className }: GPSTrackProps) => {
-  // Simple oval track representation
-  const trackPath = "M 50,20 Q 90,20 90,50 Q 90,80 50,80 Q 10,80 10,50 Q 10,20 50,20";
+  // Track with more turns - a figure-8 inspired layout
+  const trackPath = "M 20,30 L 35,20 L 65,20 L 80,30 L 80,45 L 65,55 L 35,55 L 20,65 L 20,80 L 35,85 L 65,85 L 80,75 L 80,60";
   
+  // Turn positions for flags
+  const [flags, setFlags] = useState<TurnFlag[]>([
+    { id: 1, x: 35, y: 20, color: "grey" },
+    { id: 2, x: 65, y: 20, color: "grey" },
+    { id: 3, x: 80, y: 45, color: "grey" },
+    { id: 4, x: 35, y: 55, color: "grey" },
+    { id: 5, x: 20, y: 80, color: "grey" },
+    { id: 6, x: 65, y: 85, color: "grey" },
+  ]);
+
+  const updateFlagColor = (flagId: number, color: FlagColor) => {
+    setFlags(prev => prev.map(flag => 
+      flag.id === flagId ? { ...flag, color } : flag
+    ));
+  };
+
   return (
     <div className={cn("bg-card rounded-2xl border border-border/50 p-6", className)}>
       <MapPin className="w-8 h-8 mb-4 text-racing-green" strokeWidth={1.5} />
@@ -25,6 +71,7 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
             stroke="hsl(var(--border))"
             strokeWidth="8"
             strokeLinecap="round"
+            strokeLinejoin="round"
           />
           {/* Track inner line */}
           <path
@@ -33,6 +80,7 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
             stroke="hsl(var(--muted))"
             strokeWidth="1"
             strokeLinecap="round"
+            strokeLinejoin="round"
             strokeDasharray="4 4"
           />
           {/* Car position */}
@@ -71,14 +119,56 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
           </circle>
           {/* Start/Finish line */}
           <line
-            x1="50"
-            y1="15"
-            x2="50"
-            y2="25"
+            x1="20"
+            y1="25"
+            x2="20"
+            y2="35"
             stroke="hsl(var(--foreground))"
             strokeWidth="2"
           />
         </svg>
+        
+        {/* Interactive Flags */}
+        {flags.map((flag) => (
+          <DropdownMenu key={flag.id}>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="absolute transform -translate-x-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted/50 transition-colors cursor-pointer"
+                style={{ 
+                  left: `${flag.x}%`, 
+                  top: `${flag.y}%`,
+                }}
+              >
+                <Flag 
+                  className="w-4 h-4" 
+                  fill={flagColors[flag.color]}
+                  stroke={flag.color === "grey" ? "hsl(var(--muted-foreground))" : flagColors[flag.color]}
+                  strokeWidth={1.5}
+                />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="bg-card border-border z-50">
+              {(Object.keys(flagColors) as FlagColor[]).map((color) => (
+                <DropdownMenuItem
+                  key={color}
+                  onClick={() => updateFlagColor(flag.id, color)}
+                  className={cn(
+                    "flex items-center gap-2 cursor-pointer",
+                    flag.color === color && "bg-muted"
+                  )}
+                >
+                  <Flag 
+                    className="w-4 h-4" 
+                    fill={flagColors[color]}
+                    stroke={flagColors[color]}
+                    strokeWidth={1.5}
+                  />
+                  <span>{flagLabels[color]}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ))}
       </div>
       <div className="mt-4 flex justify-between text-sm text-muted-foreground">
         <span>Lat: {(50.123 + position.x * 0.001).toFixed(4)}°</span>
