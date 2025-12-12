@@ -1,11 +1,184 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState, useEffect } from "react";
+import { Gauge, Thermometer, Activity, Car } from "lucide-react";
+import StatCard from "@/components/dashboard/StatCard";
+import GPSTrack from "@/components/dashboard/GPSTrack";
+import MotorStatus from "@/components/dashboard/MotorStatus";
+import LapTimes from "@/components/dashboard/LapTimes";
+import RaceTimer from "@/components/dashboard/RaceTimer";
+
+const TOTAL_LAPS = 11;
+const RACE_DURATION_SECONDS = 35 * 60; // 35 minutes
 
 const Index = () => {
+  // Simulated telemetry data
+  const [rpm, setRpm] = useState(4500);
+  const [speed, setSpeed] = useState(42);
+  const [temperature, setTemperature] = useState(78);
+  const [motorRunning, setMotorRunning] = useState(true);
+  const [timeLeft, setTimeLeft] = useState(RACE_DURATION_SECONDS);
+  const [currentLap, setCurrentLap] = useState(4);
+  const [lapTimes, setLapTimes] = useState([185, 182, 179, 183]);
+  const [carPosition, setCarPosition] = useState({ x: 50, y: 20 });
+
+  // Simulate live data updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Simulate RPM fluctuation
+      setRpm(prev => Math.max(0, Math.min(8000, prev + (Math.random() - 0.5) * 500)));
+      
+      // Simulate speed changes
+      setSpeed(prev => Math.max(0, Math.min(80, prev + (Math.random() - 0.5) * 5)));
+      
+      // Simulate temperature
+      setTemperature(prev => Math.max(60, Math.min(95, prev + (Math.random() - 0.5) * 2)));
+      
+      // Simulate car movement on track
+      setCarPosition(prev => {
+        const angle = Math.atan2(prev.y - 50, prev.x - 50) + 0.05;
+        const radiusX = 40;
+        const radiusY = 30;
+        return {
+          x: 50 + radiusX * Math.cos(angle),
+          y: 50 + radiusY * Math.sin(angle)
+        };
+      });
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Countdown timer
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeLeft(prev => Math.max(0, prev - 1));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
+    <div className="min-h-screen bg-background p-4 md:p-6 lg:p-8">
+      {/* Header */}
+      <header className="mb-8">
+        <div className="flex items-center gap-3 mb-2">
+          <Car className="w-8 h-8 text-racing-blue" />
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground">
+            Student Car Telemetry
+          </h1>
+        </div>
+        <p className="text-muted-foreground">Live race dashboard</p>
+      </header>
+
+      {/* Main Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 auto-rows-fr">
+        {/* GPS Track - Large */}
+        <GPSTrack 
+          position={carPosition} 
+          className="col-span-2 row-span-2" 
+        />
+
+        {/* Speed */}
+        <StatCard
+          title="Speed"
+          value={Math.round(speed)}
+          unit="km/h"
+          icon={Gauge}
+          iconColor="text-racing-blue"
+          valueColor="text-racing-blue"
+          className="col-span-1"
+        />
+
+        {/* RPM */}
+        <StatCard
+          title="Motor RPM"
+          value={Math.round(rpm).toLocaleString()}
+          icon={Activity}
+          iconColor="text-racing-orange"
+          valueColor="text-racing-orange"
+          className="col-span-1"
+        />
+
+        {/* Timer */}
+        <RaceTimer
+          timeLeftSeconds={timeLeft}
+          totalSeconds={RACE_DURATION_SECONDS}
+          className="col-span-2 row-span-2"
+        />
+
+        {/* Temperature */}
+        <StatCard
+          title="Motor Temp"
+          value={Math.round(temperature)}
+          unit="°C"
+          icon={Thermometer}
+          iconColor={temperature > 85 ? "text-racing-red" : "text-racing-green"}
+          valueColor={temperature > 85 ? "text-racing-red" : "text-racing-green"}
+          className="col-span-1"
+        />
+
+        {/* Motor Status */}
+        <MotorStatus 
+          isRunning={motorRunning} 
+          className="col-span-1"
+        />
+
+        {/* Lap Times - Tall */}
+        <LapTimes
+          lapTimes={lapTimes}
+          currentLap={currentLap}
+          totalLaps={TOTAL_LAPS}
+          className="col-span-2 md:col-span-2 row-span-2"
+        />
+
+        {/* Laps Progress */}
+        <div className="bg-card rounded-2xl border border-border/50 p-6 col-span-2 md:col-span-2 flex flex-col">
+          <Activity className="w-8 h-8 mb-4 text-racing-purple" strokeWidth={1.5} />
+          <p className="text-muted-foreground text-sm font-medium mb-2 uppercase tracking-wide">
+            Race Progress
+          </p>
+          <div className="flex-1 flex items-end">
+            <div className="w-full">
+              <div className="flex items-baseline gap-2 mb-4">
+                <span className="text-5xl font-bold text-racing-purple font-mono">
+                  {currentLap}
+                </span>
+                <span className="text-2xl text-muted-foreground">/ {TOTAL_LAPS}</span>
+                <span className="text-muted-foreground ml-2">laps</span>
+              </div>
+              {/* Lap progress dots */}
+              <div className="flex gap-2 flex-wrap">
+                {Array.from({ length: TOTAL_LAPS }, (_, i) => (
+                  <div
+                    key={i}
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                      i < currentLap 
+                        ? "bg-racing-purple text-background" 
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {i + 1}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Best Lap Time */}
+        <div className="bg-card rounded-2xl border border-border/50 p-6 col-span-2 flex flex-col">
+          <Activity className="w-8 h-8 mb-4 text-racing-green" strokeWidth={1.5} />
+          <p className="text-muted-foreground text-sm font-medium mb-2 uppercase tracking-wide">
+            Best Lap
+          </p>
+          <div className="flex-1 flex items-end">
+            <span className="text-4xl font-bold text-racing-green font-mono">
+              {lapTimes.length > 0 
+                ? `${Math.floor(Math.min(...lapTimes) / 60)}:${(Math.min(...lapTimes) % 60).toString().padStart(2, "0")}`
+                : "--:--"
+              }
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );
