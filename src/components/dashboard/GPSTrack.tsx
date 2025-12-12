@@ -37,17 +37,16 @@ const flagLabels: Record<FlagColor, string> = {
 };
 
 const GPSTrack = ({ position, className }: GPSTrackProps) => {
-  // Track with more turns - a figure-8 inspired layout
-  const trackPath = "M 20,30 L 35,20 L 65,20 L 80,30 L 80,45 L 65,55 L 35,55 L 20,65 L 20,80 L 35,85 L 65,85 L 80,75 L 80,60";
+  // Closed track with multiple turns
+  const trackPath = "M 20,30 L 35,20 L 65,20 L 80,30 L 80,45 L 65,55 L 50,50 L 35,55 L 20,45 Z";
   
   // Turn positions for flags
   const [flags, setFlags] = useState<TurnFlag[]>([
     { id: 1, x: 35, y: 20, color: "grey" },
     { id: 2, x: 65, y: 20, color: "grey" },
-    { id: 3, x: 80, y: 45, color: "grey" },
-    { id: 4, x: 35, y: 55, color: "grey" },
-    { id: 5, x: 20, y: 80, color: "grey" },
-    { id: 6, x: 65, y: 85, color: "grey" },
+    { id: 3, x: 80, y: 37, color: "grey" },
+    { id: 4, x: 50, y: 50, color: "grey" },
+    { id: 5, x: 20, y: 37, color: "grey" },
   ]);
 
   const updateFlagColor = (flagId: number, color: FlagColor) => {
