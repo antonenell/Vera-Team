@@ -93,7 +93,17 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-6 lg:p-8">
+    <div className="min-h-screen bg-background p-4 md:p-6 lg:p-8 relative overflow-hidden">
+      {/* Gradient mesh background */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-[30%] left-1/4 w-[600px] h-[600px] rounded-full bg-purple-600/20 blur-[120px]" />
+        <div className="absolute -top-[20%] right-1/4 w-[500px] h-[500px] rounded-full bg-pink-500/15 blur-[100px]" />
+        <div className="absolute top-1/4 -left-[10%] w-[400px] h-[400px] rounded-full bg-blue-500/10 blur-[80px]" />
+        <div className="absolute top-[60%] right-[10%] w-[300px] h-[300px] rounded-full bg-cyan-500/10 blur-[60px]" />
+      </div>
+      
+      {/* Content */}
+      <div className="relative z-10">
       {/* Header */}
       <header className="mb-8 flex items-center justify-between">
         <img src={chalmersLogo} alt="Chalmers Vera Team" className="h-12 w-auto" />
@@ -237,6 +247,7 @@ const Index = () => {
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 };
