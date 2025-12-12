@@ -206,16 +206,21 @@ const Index = () => {
           </div>
         </div>
 
-        {/* Best Lap Time */}
+        {/* Best Lap (Closest to Target) */}
         <div className="bg-card rounded-2xl border border-border/50 p-6 col-span-2 flex flex-col">
           <Activity className="w-8 h-8 mb-4 text-racing-green" strokeWidth={1.5} />
           <p className="text-muted-foreground text-sm font-medium mb-2 uppercase tracking-wide">
-            Best Lap
+            Best Lap (Target: {Math.floor(TARGET_LAP_TIME / 60)}:{Math.round(TARGET_LAP_TIME % 60).toString().padStart(2, "0")})
           </p>
           <div className="flex-1 flex items-end">
             <span className="text-4xl font-bold text-racing-green font-mono">
               {lapTimes.length > 0 
-                ? `${Math.floor(Math.min(...lapTimes) / 60)}:${(Math.min(...lapTimes) % 60).toString().padStart(2, "0")}`
+                ? (() => {
+                    const bestLap = lapTimes.reduce((best, time) => 
+                      Math.abs(time - TARGET_LAP_TIME) < Math.abs(best - TARGET_LAP_TIME) ? time : best
+                    );
+                    return `${Math.floor(bestLap / 60)}:${(bestLap % 60).toString().padStart(2, "0")}`;
+                  })()
                 : "--:--"
               }
             </span>
