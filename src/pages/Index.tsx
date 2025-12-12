@@ -182,14 +182,14 @@ const Index = () => {
 
         {/* Laps Progress */}
         <div className="bg-card rounded-2xl border border-border/50 p-6 col-span-2 md:col-span-2 flex flex-col">
-          <Activity className="w-8 h-8 mb-4 text-racing-cyan" strokeWidth={1.5} />
+          <Activity className="w-8 h-8 mb-4 text-racing-green" strokeWidth={1.5} />
           <p className="text-muted-foreground text-sm font-medium mb-2 uppercase tracking-wide">
             Race Progress
           </p>
           <div className="flex-1 flex items-end">
             <div className="w-full">
               <div className="flex items-baseline gap-2 mb-4">
-                <span className="text-5xl font-bold text-racing-cyan font-mono">
+                <span className="text-5xl font-bold text-racing-green font-mono">
                   {currentLap}
                 </span>
                 <span className="text-2xl text-muted-foreground">/ {TOTAL_LAPS}</span>
@@ -202,7 +202,7 @@ const Index = () => {
                     key={i}
                     className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                       i < currentLap 
-                        ? "bg-racing-cyan text-background" 
+                        ? "bg-racing-green text-background" 
                         : i === currentLap
                           ? "bg-racing-orange text-background ring-2 ring-racing-orange ring-offset-2 ring-offset-card"
                           : "bg-muted text-muted-foreground"
