@@ -54,13 +54,12 @@ const LapTimes = ({ lapTimes, currentLap, totalLaps, targetLapTime, currentLapEl
         <div className="space-y-2">
           {/* Current lap indicator */}
           {currentLap > lapTimes.length && currentLapElapsed > 0 && (
-            <div className="flex justify-between items-center py-2 px-3 rounded-lg bg-racing-cyan/20 border border-racing-cyan/30 animate-pulse">
-              <span className="text-racing-cyan font-medium">
+            <div className="flex justify-between items-center py-2 px-3 rounded-lg bg-racing-orange/20 border-2 border-racing-orange">
+              <span className="text-racing-orange font-bold">
                 Lap {lapTimes.length + 1}
               </span>
-              <span className="font-mono font-bold text-racing-cyan">
+              <span className="font-mono font-bold text-racing-orange">
                 {formatTime(currentLapElapsed)}
-                <span className="ml-2 text-xs">LIVE</span>
               </span>
             </div>
           )}
