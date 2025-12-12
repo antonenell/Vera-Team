@@ -96,10 +96,10 @@ const Index = () => {
     <div className="min-h-screen bg-background p-4 md:p-6 lg:p-8 relative overflow-hidden">
       {/* Gradient mesh background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-[30%] left-1/4 w-[600px] h-[600px] rounded-full bg-emerald-600/20 blur-[120px]" />
-        <div className="absolute -top-[20%] right-1/4 w-[500px] h-[500px] rounded-full bg-teal-500/15 blur-[100px]" />
-        <div className="absolute top-1/4 -left-[10%] w-[400px] h-[400px] rounded-full bg-green-500/10 blur-[80px]" />
-        <div className="absolute top-[60%] right-[10%] w-[300px] h-[300px] rounded-full bg-cyan-600/10 blur-[60px]" />
+        <div className="absolute -top-[30%] left-1/4 w-[600px] h-[600px] rounded-full bg-orange-500/20 blur-[120px]" />
+        <div className="absolute -top-[20%] right-1/4 w-[500px] h-[500px] rounded-full bg-amber-500/15 blur-[100px]" />
+        <div className="absolute top-1/4 -left-[10%] w-[400px] h-[400px] rounded-full bg-blue-900/20 blur-[80px]" />
+        <div className="absolute top-[60%] right-[10%] w-[300px] h-[300px] rounded-full bg-indigo-900/15 blur-[60px]" />
       </div>
       
       {/* Content */}
