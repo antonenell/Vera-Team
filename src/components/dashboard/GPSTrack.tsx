@@ -48,7 +48,8 @@ const tracks: Record<TrackName, TrackConfig> = {
   },
   "silesia-ring": {
     name: "Silesia Ring",
-    bounds: [[18.91, 50.36], [18.93, 50.38]], // Silesia Ring, Poland (placeholder)
+    // Center: 50°31'44.7"N 18°05'39.8"E (50.5291, 18.0944)
+    bounds: [[18.0844, 50.5241], [18.1044, 50.5341]],
     defaultFlags: [
       { id: 1, x: 30, y: 21 },
       { id: 2, x: 70, y: 21 },
