@@ -38,7 +38,7 @@ const LapTimes = ({ lapTimes, currentLap, totalLaps, targetLapTime, currentLapEl
   };
   
   return (
-    <div className={cn("bg-card rounded-2xl border border-border/50 p-6 flex flex-col", className)}>
+    <div className={cn("glass-card relative rounded-2xl p-6 flex flex-col", className)}>
       <Timer className="w-8 h-8 mb-4 text-racing-cyan" strokeWidth={1.5} />
       <div className="flex items-center justify-between mb-2">
         <p className="text-muted-foreground text-sm font-medium uppercase tracking-wide">
