@@ -96,56 +96,56 @@ All colors MUST be HSL.
   }
 
   .dark {
-    --background: 250 25% 6%;
+    --background: 220 25% 6%;
     --foreground: 220 20% 95%;
 
-    --card: 250 20% 10%;
+    --card: 220 20% 10%;
     --card-foreground: 220 20% 95%;
 
-    --popover: 250 20% 12%;
+    --popover: 220 20% 12%;
     --popover-foreground: 220 20% 95%;
 
-    --primary: 280 80% 65%;
-    --primary-foreground: 250 25% 6%;
+    --primary: 200 95% 50%;
+    --primary-foreground: 220 25% 6%;
 
-    --secondary: 250 20% 16%;
+    --secondary: 220 20% 16%;
     --secondary-foreground: 220 20% 95%;
 
-    --muted: 250 15% 20%;
+    --muted: 220 15% 20%;
     --muted-foreground: 220 15% 60%;
 
-    --accent: 175 70% 45%;
-    --accent-foreground: 250 25% 6%;
+    --accent: 165 70% 45%;
+    --accent-foreground: 220 25% 6%;
 
     --destructive: 0 75% 55%;
     --destructive-foreground: 0 85% 97%;
 
-    --border: 250 15% 18%;
-    --input: 250 15% 20%;
-    --ring: 280 80% 65%;
-    --sidebar-background: 250 25% 6%;
+    --border: 220 15% 18%;
+    --input: 220 15% 20%;
+    --ring: 200 95% 50%;
+    --sidebar-background: 220 25% 6%;
     --sidebar-foreground: 220 20% 95%;
-    --sidebar-primary: 280 80% 65%;
-    --sidebar-primary-foreground: 250 25% 6%;
-    --sidebar-accent: 175 70% 45%;
-    --sidebar-accent-foreground: 250 25% 6%;
-    --sidebar-border: 250 15% 18%;
-    --sidebar-ring: 280 80% 65%;
+    --sidebar-primary: 200 95% 50%;
+    --sidebar-primary-foreground: 220 25% 6%;
+    --sidebar-accent: 165 70% 45%;
+    --sidebar-accent-foreground: 220 25% 6%;
+    --sidebar-border: 220 15% 18%;
+    --sidebar-ring: 200 95% 50%;
     
     /* Racing accent colors */
-    --racing-blue: 220 90% 60%;
+    --racing-blue: 200 95% 50%;
     --racing-green: 160 75% 50%;
     --racing-orange: 30 95% 55%;
     --racing-red: 0 75% 55%;
-    --racing-purple: 280 80% 65%;
-    --racing-cyan: 175 70% 45%;
+    --racing-purple: 260 70% 60%;
+    --racing-cyan: 185 80% 50%;
     
-    --chart-1: 280 80% 65%;
-    --chart-2: 175 70% 45%;
+    --chart-1: 200 95% 50%;
+    --chart-2: 165 70% 45%;
     --chart-3: 30 95% 55%;
-    --chart-4: 220 90% 60%;
+    --chart-4: 260 70% 60%;
     --chart-5: 160 75% 50%;
-    --sidebar: 250 20% 10%;
+    --sidebar: 220 20% 10%;
     --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.2);
     --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.2);
     --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.3), 0 1px 2px -1px hsl(0 0% 0% / 0.2);
