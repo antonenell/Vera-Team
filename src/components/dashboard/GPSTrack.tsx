@@ -199,15 +199,9 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
         className: "flag-popup-custom",
       }).setDOMContent(popupContent);
       
-      el.addEventListener("mouseenter", () => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
         popup.setLngLat(flag.coords).addTo(map.current!);
-      });
-      
-      el.addEventListener("mouseleave", (e) => {
-        const relatedTarget = e.relatedTarget as HTMLElement;
-        if (!relatedTarget?.closest('.mapboxgl-popup')) {
-          popup.remove();
-        }
       });
       
       markersRef.current.push(marker);
