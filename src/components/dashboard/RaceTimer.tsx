@@ -1,4 +1,4 @@
-import { Clock, Play, Pause, Flag } from "lucide-react";
+import { Clock, Play, Pause, Flag, TrendingUp, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -8,6 +8,8 @@ interface RaceTimerProps {
   isRunning: boolean;
   onStartStop: () => void;
   onLap: () => void;
+  lapTimes: number[];
+  targetLapTime: number;
   className?: string;
 }
 
@@ -23,11 +25,20 @@ const RaceTimer = ({
   isRunning,
   onStartStop,
   onLap,
+  lapTimes,
+  targetLapTime,
   className 
 }: RaceTimerProps) => {
   const progress = (timeLeftSeconds / totalSeconds) * 100;
   const isLowTime = timeLeftSeconds < 300; // Less than 5 minutes
   const isCritical = timeLeftSeconds < 60; // Less than 1 minute
+  
+  // Calculate total cumulative delta from target pace
+  const totalTimeUsed = lapTimes.reduce((a, b) => a + b, 0);
+  const expectedTime = lapTimes.length * targetLapTime;
+  const totalDelta = Math.round(totalTimeUsed - expectedTime);
+  const isAhead = totalDelta < 0;
+  const isBehind = totalDelta > 0;
   
   return (
     <div className={cn("bg-card rounded-2xl border border-border/50 p-6 flex flex-col", className)}>
@@ -94,9 +105,21 @@ const RaceTimer = ({
             style={{ width: `${progress}%` }}
           />
         </div>
-        <p className="text-muted-foreground text-xs mt-2">
-          {Math.floor((totalSeconds - timeLeftSeconds) / 60)} min elapsed
-        </p>
+        <div className="flex justify-between items-center mt-2">
+          <p className="text-muted-foreground text-xs">
+            {Math.floor((totalSeconds - timeLeftSeconds) / 60)} min elapsed
+          </p>
+          {lapTimes.length > 0 && (
+            <div className={cn(
+              "flex items-center gap-1 text-sm font-mono font-bold",
+              isAhead ? "text-racing-green" : isBehind ? "text-racing-red" : "text-muted-foreground"
+            )}>
+              {isAhead && <TrendingDown className="w-4 h-4" />}
+              {isBehind && <TrendingUp className="w-4 h-4" />}
+              <span>{totalDelta >= 0 ? "+" : ""}{totalDelta}s</span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

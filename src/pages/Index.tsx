@@ -126,6 +126,8 @@ const Index = () => {
           isRunning={isTimerRunning}
           onStartStop={handleStartStop}
           onLap={handleLap}
+          lapTimes={lapTimes}
+          targetLapTime={TARGET_LAP_TIME}
           className="col-span-2 row-span-2"
         />
 
