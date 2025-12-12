@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { MapPin, Flag, RotateCcw, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
+
+const MAPBOX_TOKEN = "pk.eyJ1IjoiY2FybGJlcmdlIiwiYSI6ImNsMnh3OXZrYTBsNzUzaWp6NzlvdDM4bzgifQ.YiaCxeUA5RaJn7071yd42A";
 
 interface GPSTrackProps {
   position: { x: number; y: number };
@@ -26,31 +30,31 @@ interface TurnFlag {
 
 interface TrackConfig {
   name: string;
-  path: string;
-  startLine: { x1: number; y1: number; x2: number; y2: number };
+  center: [number, number]; // [lng, lat]
+  zoom: number;
   defaultFlags: Omit<TurnFlag, "color">[];
 }
 
 const tracks: Record<TrackName, TrackConfig> = {
   "stora-holm": {
     name: "Stora Holm",
-    path: "M 20,30 L 35,20 L 65,20 L 80,30 L 80,45 L 65,55 L 50,50 L 35,55 L 20,45 Z",
-    startLine: { x1: 20, y1: 25, x2: 20, y2: 35 },
+    center: [11.8985, 57.7037], // Stora Holm trafikövningsplats, Gothenburg
+    zoom: 15,
     defaultFlags: [
-      { id: 1, x: 35, y: (20 / 70) * 100 },
-      { id: 2, x: 65, y: (20 / 70) * 100 },
-      { id: 3, x: 50, y: (50 / 70) * 100 },
+      { id: 1, x: 35, y: 28 },
+      { id: 2, x: 65, y: 28 },
+      { id: 3, x: 50, y: 71 },
     ],
   },
   "silesia-ring": {
     name: "Silesia Ring",
-    path: "M 15,35 L 30,15 L 70,15 L 85,25 L 85,40 L 70,50 L 85,60 L 70,70 L 30,70 L 15,55 Z",
-    startLine: { x1: 15, y1: 30, x2: 15, y2: 40 },
+    center: [18.9167, 50.3667], // Silesia Ring, Poland
+    zoom: 14,
     defaultFlags: [
-      { id: 1, x: 30, y: (15 / 70) * 100 },
-      { id: 2, x: 70, y: (15 / 70) * 100 },
-      { id: 3, x: 70, y: (50 / 70) * 100 },
-      { id: 4, x: 70, y: (70 / 70) * 100 },
+      { id: 1, x: 30, y: 21 },
+      { id: 2, x: 70, y: 21 },
+      { id: 3, x: 70, y: 71 },
+      { id: 4, x: 70, y: 100 },
     ],
   },
 };
@@ -72,6 +76,8 @@ const flagLabels: Record<FlagColor, string> = {
 const GPSTrack = ({ position, className }: GPSTrackProps) => {
   const [selectedTrack, setSelectedTrack] = useState<TrackName>("stora-holm");
   const track = tracks[selectedTrack];
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const map = useRef<mapboxgl.Map | null>(null);
   
   const [flags, setFlags] = useState<Record<TrackName, TurnFlag[]>>({
     "stora-holm": tracks["stora-holm"].defaultFlags.map(f => ({ ...f, color: "grey" as FlagColor })),
@@ -79,6 +85,37 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
   });
 
   const currentFlags = flags[selectedTrack];
+
+  // Initialize map
+  useEffect(() => {
+    if (!mapContainer.current || map.current) return;
+
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+    
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: "mapbox://styles/mapbox/satellite-v9",
+      center: track.center,
+      zoom: track.zoom,
+      interactive: false, // Lock the map
+    });
+
+    return () => {
+      map.current?.remove();
+      map.current = null;
+    };
+  }, []);
+
+  // Update map when track changes
+  useEffect(() => {
+    if (map.current) {
+      map.current.flyTo({
+        center: track.center,
+        zoom: track.zoom,
+        duration: 1000,
+      });
+    }
+  }, [selectedTrack, track.center, track.zoom]);
 
   const updateFlagColor = (flagId: number, color: FlagColor) => {
     setFlags(prev => ({
@@ -138,71 +175,20 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
           <RotateCcw className="w-3 h-3" />
         </Button>
       </div>
-      <div className="relative flex-1 w-full min-h-0">
-        <svg viewBox="0 0 100 70" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
-          {/* Track outline */}
-          <path
-            d={track.path}
-            fill="none"
-            stroke="hsl(var(--border))"
-            strokeWidth="8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          {/* Track inner line */}
-          <path
-            d={track.path}
-            fill="none"
-            stroke="hsl(var(--muted))"
-            strokeWidth="1"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeDasharray="4 4"
-          />
-          {/* Car position */}
-          <circle
-            cx={position.x}
-            cy={position.y}
-            r="4"
-            className="fill-racing-green"
-          >
-            <animate
-              attributeName="r"
-              values="4;5;4"
-              dur="1.5s"
-              repeatCount="indefinite"
-            />
-          </circle>
-          {/* Glow effect */}
-          <circle
-            cx={position.x}
-            cy={position.y}
-            r="8"
-            className="fill-racing-green/30"
-          >
-            <animate
-              attributeName="r"
-              values="8;12;8"
-              dur="1.5s"
-              repeatCount="indefinite"
-            />
-            <animate
-              attributeName="opacity"
-              values="0.3;0.1;0.3"
-              dur="1.5s"
-              repeatCount="indefinite"
-            />
-          </circle>
-          {/* Start/Finish line */}
-          <line
-            x1={track.startLine.x1}
-            y1={track.startLine.y1}
-            x2={track.startLine.x2}
-            y2={track.startLine.y2}
-            stroke="hsl(var(--foreground))"
-            strokeWidth="2"
-          />
-        </svg>
+      <div className="relative flex-1 w-full min-h-0 rounded-lg overflow-hidden">
+        {/* Mapbox Map */}
+        <div ref={mapContainer} className="absolute inset-0" />
+        
+        {/* Car position overlay */}
+        <div 
+          className="absolute w-3 h-3 rounded-full bg-racing-green animate-pulse z-10"
+          style={{ 
+            left: `${position.x}%`, 
+            top: `${position.y}%`,
+            transform: 'translate(-50%, -50%)',
+            boxShadow: '0 0 12px hsl(var(--racing-green))'
+          }}
+        />
         
         {/* Interactive Flags */}
         {currentFlags.map((flag) => (
