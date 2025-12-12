@@ -54,13 +54,15 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
   };
 
   return (
-    <div className={cn("bg-card rounded-2xl border border-border/50 p-6", className)}>
-      <MapPin className="w-8 h-8 mb-4 text-racing-green" strokeWidth={1.5} />
-      <p className="text-muted-foreground text-sm font-medium mb-4 uppercase tracking-wide">
-        Track Position
-      </p>
-      <div className="relative aspect-[2/1] w-full">
-        <svg viewBox="0 0 100 100" className="w-full h-full">
+    <div className={cn("bg-card rounded-2xl border border-border/50 p-4 flex flex-col", className)}>
+      <div className="flex items-center gap-2 mb-2">
+        <MapPin className="w-5 h-5 text-racing-green" strokeWidth={1.5} />
+        <p className="text-muted-foreground text-sm font-medium uppercase tracking-wide">
+          Track Position
+        </p>
+      </div>
+      <div className="relative flex-1 w-full min-h-0">
+        <svg viewBox="0 0 100 70" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
           {/* Track outline */}
           <path
             d={trackPath}
@@ -167,7 +169,7 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
           </DropdownMenu>
         ))}
       </div>
-      <div className="mt-4 flex justify-between text-sm text-muted-foreground">
+      <div className="flex justify-between text-xs text-muted-foreground mt-2">
         <span>Lat: {(50.123 + position.x * 0.001).toFixed(4)}°</span>
         <span>Lon: {(8.234 + position.y * 0.001).toFixed(4)}°</span>
       </div>
