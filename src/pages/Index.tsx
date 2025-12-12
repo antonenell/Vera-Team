@@ -8,6 +8,8 @@ import RaceTimer from "@/components/dashboard/RaceTimer";
 
 const TOTAL_LAPS = 11;
 const RACE_DURATION_SECONDS = 35 * 60; // 35 minutes
+const TARGET_RACE_TIME = 34 * 60; // 34 minutes (1 min safety margin)
+const TARGET_LAP_TIME = TARGET_RACE_TIME / TOTAL_LAPS; // ~185.5 seconds per lap
 
 const Index = () => {
   // Simulated telemetry data
@@ -149,6 +151,7 @@ const Index = () => {
           lapTimes={lapTimes}
           currentLap={currentLap}
           totalLaps={TOTAL_LAPS}
+          targetLapTime={TARGET_LAP_TIME}
           className="col-span-2 md:col-span-2 row-span-2"
         />
 
