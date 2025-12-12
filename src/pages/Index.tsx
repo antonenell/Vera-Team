@@ -124,7 +124,7 @@ const Index = () => {
         {/* GPS Track - Large */}
         <GPSTrack 
           position={carPosition} 
-          className="col-span-4 row-span-1" 
+          className="col-span-2 md:col-span-3 row-span-2" 
         />
 
         {/* Speed */}
@@ -148,19 +148,6 @@ const Index = () => {
           className="col-span-1"
         />
 
-        {/* Timer */}
-        <RaceTimer
-          timeLeftSeconds={timeLeft}
-          totalSeconds={RACE_DURATION_SECONDS}
-          isRunning={isTimerRunning}
-          onStartStop={handleStartStop}
-          onLap={handleLap}
-          onReset={handleReset}
-          lapTimes={lapTimes}
-          targetLapTime={TARGET_LAP_TIME}
-          className="col-span-2 row-span-2"
-        />
-
         {/* Temperature */}
         <StatCard
           title="Motor Temp"
@@ -180,6 +167,19 @@ const Index = () => {
           className="col-span-1"
         />
 
+        {/* Timer */}
+        <RaceTimer
+          timeLeftSeconds={timeLeft}
+          totalSeconds={RACE_DURATION_SECONDS}
+          isRunning={isTimerRunning}
+          onStartStop={handleStartStop}
+          onLap={handleLap}
+          onReset={handleReset}
+          lapTimes={lapTimes}
+          targetLapTime={TARGET_LAP_TIME}
+          className="col-span-2 row-span-2"
+        />
+
         {/* Lap Times - Tall */}
         <LapTimes
           lapTimes={lapTimes}
@@ -187,7 +187,7 @@ const Index = () => {
           totalLaps={TOTAL_LAPS}
           targetLapTime={TARGET_LAP_TIME}
           currentLapElapsed={currentLapElapsed}
-          className="col-span-2 md:col-span-2 row-span-2"
+          className="col-span-2 row-span-2"
         />
 
         {/* Laps Progress */}
