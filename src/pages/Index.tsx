@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Gauge, Thermometer, Activity } from "lucide-react";
+import { Gauge, Thermometer, Activity, User } from "lucide-react";
 import StatCard from "@/components/dashboard/StatCard";
 import GPSTrack from "@/components/dashboard/GPSTrack";
 import MotorStatus from "@/components/dashboard/MotorStatus";
@@ -92,8 +92,12 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background p-4 md:p-6 lg:p-8">
       {/* Header */}
-      <header className="mb-8">
+      <header className="mb-8 flex items-center justify-between">
         <img src={chalmersLogo} alt="Chalmers Vera Team" className="h-12 w-auto" />
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <User className="w-5 h-5" />
+          <span className="text-sm font-medium">Admin</span>
+        </div>
       </header>
 
       {/* Main Grid */}
