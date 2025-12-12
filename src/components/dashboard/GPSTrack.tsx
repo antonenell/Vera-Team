@@ -30,8 +30,7 @@ interface TurnFlag {
 
 interface TrackConfig {
   name: string;
-  center: [number, number]; // [lng, lat]
-  zoom: number;
+  bounds: [[number, number], [number, number]]; // [[sw_lng, sw_lat], [ne_lng, ne_lat]]
   defaultFlags: Omit<TurnFlag, "color">[];
 }
 
@@ -39,8 +38,8 @@ interface TrackConfig {
 const tracks: Record<TrackName, TrackConfig> = {
   "stora-holm": {
     name: "Stora Holm",
-    center: [11.9181, 57.7764], // Stora Holm trafikövningsplats (57°46'35.2"N 11°55'05.1"E)
-    zoom: 14,
+    // Upper left: 57°46'40.3"N 11°54'45.7"E, Lower right: 57°46'28.3"N 11°55'22.0"E
+    bounds: [[11.9127, 57.7745], [11.9228, 57.7779]],
     defaultFlags: [
       { id: 1, x: 35, y: 28 },
       { id: 2, x: 65, y: 28 },
@@ -49,8 +48,7 @@ const tracks: Record<TrackName, TrackConfig> = {
   },
   "silesia-ring": {
     name: "Silesia Ring",
-    center: [18.9167, 50.3667], // Silesia Ring, Poland
-    zoom: 14,
+    bounds: [[18.91, 50.36], [18.93, 50.38]], // Silesia Ring, Poland (placeholder)
     defaultFlags: [
       { id: 1, x: 30, y: 21 },
       { id: 2, x: 70, y: 21 },
@@ -96,8 +94,8 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: "mapbox://styles/mapbox/satellite-v9",
-      center: track.center,
-      zoom: track.zoom,
+      bounds: track.bounds,
+      fitBoundsOptions: { padding: 10 },
       interactive: false, // Lock the map
     });
 
@@ -110,13 +108,12 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
   // Update map when track changes
   useEffect(() => {
     if (map.current) {
-      map.current.flyTo({
-        center: track.center,
-        zoom: track.zoom,
+      map.current.fitBounds(track.bounds, {
+        padding: 10,
         duration: 1000,
       });
     }
-  }, [selectedTrack, track.center, track.zoom]);
+  }, [selectedTrack, track.bounds]);
 
   const updateFlagColor = (flagId: number, color: FlagColor) => {
     setFlags(prev => ({
