@@ -39,7 +39,7 @@ const LapTimes = ({ lapTimes, currentLap, totalLaps, targetLapTime, currentLapEl
   
   return (
     <div className={cn("bg-card rounded-2xl border border-border/50 p-6 flex flex-col", className)}>
-      <Timer className="w-8 h-8 mb-4 text-racing-purple" strokeWidth={1.5} />
+      <Timer className="w-8 h-8 mb-4 text-racing-cyan" strokeWidth={1.5} />
       <div className="flex items-center justify-between mb-2">
         <p className="text-muted-foreground text-sm font-medium uppercase tracking-wide">
           Lap Times
@@ -79,7 +79,7 @@ const LapTimes = ({ lapTimes, currentLap, totalLaps, targetLapTime, currentLapEl
                 className={cn(
                   "flex justify-between items-center py-2 px-3 rounded-lg transition-colors",
                   time === bestLap 
-                    ? "bg-racing-purple/20 border border-racing-purple/30" 
+                    ? "bg-racing-cyan/20 border border-racing-cyan/30" 
                     : "bg-muted/30"
                 )}
               >
@@ -97,11 +97,11 @@ const LapTimes = ({ lapTimes, currentLap, totalLaps, targetLapTime, currentLapEl
                   </span>
                   <span className={cn(
                     "font-mono font-bold",
-                    time === bestLap ? "text-racing-purple" : "text-foreground"
+                    time === bestLap ? "text-racing-cyan" : "text-foreground"
                   )}>
                     {formatTime(time)}
                     {time === bestLap && (
-                      <span className="ml-2 text-xs text-racing-purple">BEST</span>
+                      <span className="ml-2 text-xs text-racing-cyan">BEST</span>
                     )}
                   </span>
                 </div>
