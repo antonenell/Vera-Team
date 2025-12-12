@@ -23,7 +23,12 @@ const formatDelta = (delta: number): string => {
 };
 
 const LapTimes = ({ lapTimes, currentLap, totalLaps, targetLapTime, currentLapElapsed = 0, className }: LapTimesProps) => {
-  const bestLap = lapTimes.length > 0 ? Math.min(...lapTimes) : 0;
+  // Best lap is the one closest to target time
+  const bestLap = lapTimes.length > 0 
+    ? lapTimes.reduce((best, time) => 
+        Math.abs(time - targetLapTime) < Math.abs(best - targetLapTime) ? time : best
+      )
+    : 0;
   
   // Calculate cumulative delta from target pace
   const getCumulativeDelta = (index: number): number => {
