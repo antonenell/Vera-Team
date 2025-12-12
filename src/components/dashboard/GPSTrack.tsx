@@ -40,11 +40,12 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
   // Closed track with multiple turns
   const trackPath = "M 20,30 L 35,20 L 65,20 L 80,30 L 80,45 L 65,55 L 50,50 L 35,55 L 20,45 Z";
   
-  // Turn positions for flags
+  // Turn positions for flags (percentages based on viewBox 100x70)
+  // Track points: (35,20), (65,20), (80,30), (80,45), (65,55), (50,50), (35,55), (20,45), (20,30)
   const [flags, setFlags] = useState<TurnFlag[]>([
-    { id: 1, x: 35, y: 20, color: "grey" },
-    { id: 2, x: 65, y: 20, color: "grey" },
-    { id: 3, x: 50, y: 50, color: "grey" },
+    { id: 1, x: 35, y: (20 / 70) * 100, color: "grey" },  // top-left turn
+    { id: 2, x: 65, y: (20 / 70) * 100, color: "grey" },  // top-right turn
+    { id: 3, x: 50, y: (50 / 70) * 100, color: "grey" },  // center turn
   ]);
 
   const updateFlagColor = (flagId: number, color: FlagColor) => {
