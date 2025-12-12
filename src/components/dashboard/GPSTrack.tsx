@@ -124,18 +124,87 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
     currentFlags.forEach((flag) => {
       const el = document.createElement("div");
       el.className = "flag-marker";
-      el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="${getFlagColorHex(flag.color)}" stroke="${getFlagColorHex(flag.color)}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
-      el.style.cursor = "pointer";
+      el.style.cssText = `
+        cursor: pointer;
+        filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));
+        transition: transform 0.2s ease;
+      `;
+      el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="${getFlagColorHex(flag.color)}" stroke="${getFlagColorHex(flag.color)}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
+      
+      el.addEventListener("mouseenter", () => {
+        el.style.transform = "scale(1.1)";
+      });
+      el.addEventListener("mouseleave", () => {
+        el.style.transform = "scale(1)";
+      });
       
       const marker = new mapboxgl.Marker({ element: el })
         .setLngLat(flag.coords)
         .addTo(map.current!);
       
-      el.addEventListener("click", () => {
-        const colors: FlagColor[] = ["grey", "yellow", "red", "black"];
-        const currentIndex = colors.indexOf(flag.color);
-        const nextColor = colors[(currentIndex + 1) % colors.length];
-        updateFlagColor(flag.id, nextColor);
+      // Create popup for color selection
+      const popupContent = document.createElement("div");
+      popupContent.className = "flag-color-popup";
+      popupContent.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 8px;
+        background: hsl(222.2 47.4% 11.2%);
+        border-radius: 8px;
+        border: 1px solid hsl(217.2 32.6% 17.5%);
+      `;
+      
+      const colors: { color: FlagColor; label: string }[] = [
+        { color: "grey", label: "Neutral" },
+        { color: "yellow", label: "Caution" },
+        { color: "red", label: "Danger" },
+        { color: "black", label: "Disqualified" },
+      ];
+      
+      colors.forEach(({ color, label }) => {
+        const btn = document.createElement("button");
+        btn.style.cssText = `
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 12px;
+          background: ${flag.color === color ? 'hsl(217.2 32.6% 17.5%)' : 'transparent'};
+          border: none;
+          border-radius: 4px;
+          color: hsl(210 40% 98%);
+          font-size: 12px;
+          cursor: pointer;
+          transition: background 0.2s;
+        `;
+        btn.innerHTML = `
+          <span style="width: 12px; height: 12px; border-radius: 50%; background: ${getFlagColorHex(color)}; border: 1px solid rgba(255,255,255,0.2);"></span>
+          ${label}
+        `;
+        btn.addEventListener("mouseenter", () => {
+          btn.style.background = "hsl(217.2 32.6% 17.5%)";
+        });
+        btn.addEventListener("mouseleave", () => {
+          btn.style.background = flag.color === color ? "hsl(217.2 32.6% 17.5%)" : "transparent";
+        });
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          updateFlagColor(flag.id, color);
+          popup.remove();
+        });
+        popupContent.appendChild(btn);
+      });
+      
+      const popup = new mapboxgl.Popup({
+        closeButton: false,
+        closeOnClick: true,
+        offset: 15,
+        className: "flag-popup",
+      }).setDOMContent(popupContent);
+      
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        popup.setLngLat(flag.coords).addTo(map.current!);
       });
       
       markersRef.current.push(marker);
