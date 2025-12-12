@@ -127,16 +127,8 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
       el.style.cssText = `
         cursor: pointer;
         filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));
-        transition: transform 0.2s ease;
       `;
       el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="${getFlagColorHex(flag.color)}" stroke="${getFlagColorHex(flag.color)}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
-      
-      el.addEventListener("mouseenter", () => {
-        el.style.transform = "scale(1.1)";
-      });
-      el.addEventListener("mouseleave", () => {
-        el.style.transform = "scale(1)";
-      });
       
       const marker = new mapboxgl.Marker({ element: el })
         .setLngLat(flag.coords)
