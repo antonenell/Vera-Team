@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
-import { Gauge, Thermometer, Activity, Car } from "lucide-react";
+import { Gauge, Thermometer, Activity } from "lucide-react";
 import StatCard from "@/components/dashboard/StatCard";
 import GPSTrack from "@/components/dashboard/GPSTrack";
 import MotorStatus from "@/components/dashboard/MotorStatus";
 import LapTimes from "@/components/dashboard/LapTimes";
 import RaceTimer from "@/components/dashboard/RaceTimer";
+import chalmersLogo from "@/assets/chalmersverateam.svg";
 
 const TOTAL_LAPS = 11;
 const RACE_DURATION_SECONDS = 35 * 60; // 35 minutes
@@ -92,11 +93,8 @@ const Index = () => {
     <div className="min-h-screen bg-background p-4 md:p-6 lg:p-8">
       {/* Header */}
       <header className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <Car className="w-8 h-8 text-racing-blue" />
-          <h1 className="text-2xl md:text-3xl font-bold text-foreground">
-            Student Car Telemetry
-          </h1>
+        <div className="flex items-center gap-4 mb-2">
+          <img src={chalmersLogo} alt="Chalmers Vera Team" className="h-12 w-auto" />
         </div>
         <p className="text-muted-foreground">Live race dashboard</p>
       </header>
