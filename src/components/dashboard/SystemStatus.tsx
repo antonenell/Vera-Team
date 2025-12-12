@@ -15,63 +15,74 @@ interface StatusItemProps {
 }
 
 const StatusItem = ({ label, isOnline, icon }: StatusItemProps) => (
-  <div className="flex items-center justify-between">
-    <div className="flex items-center gap-2">
-      <span className={cn(
-        "transition-colors",
-        isOnline ? "text-racing-green" : "text-racing-red"
-      )}>
-        {icon}
-      </span>
-      <span className="text-sm text-muted-foreground">{label}</span>
+  <div className="flex items-center gap-3 group">
+    <div
+      className={cn(
+        "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-500",
+        isOnline 
+          ? "bg-racing-green/10 text-racing-green" 
+          : "bg-racing-red/10 text-racing-red"
+      )}
+    >
+      {icon}
     </div>
-    <div className="flex items-center gap-2">
-      <div
-        className={cn(
-          "w-2.5 h-2.5 rounded-full transition-all duration-300",
-          isOnline 
-            ? "bg-racing-green shadow-[0_0_8px_hsl(var(--racing-green))]" 
-            : "bg-racing-red shadow-[0_0_8px_hsl(var(--racing-red))]"
-        )}
-      />
-      <span className={cn(
-        "text-xs font-bold uppercase",
+    <div className="flex-1">
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <p className={cn(
+        "text-xs font-medium transition-colors",
         isOnline ? "text-racing-green" : "text-racing-red"
       )}>
         {isOnline ? "Online" : "Offline"}
-      </span>
+      </p>
     </div>
+    <div
+      className={cn(
+        "w-2 h-2 rounded-full transition-all duration-500",
+        isOnline 
+          ? "bg-racing-green animate-pulse" 
+          : "bg-racing-red"
+      )}
+    />
   </div>
 );
 
 const SystemStatus = ({ xLogOnline, driverDisplayOnline, motorRunning, className }: SystemStatusProps) => {
+  const allOnline = xLogOnline && driverDisplayOnline && motorRunning;
+  
   return (
     <div className={cn("bg-card rounded-2xl border border-border/50 p-6 flex flex-col", className)}>
-      <Wifi 
-        className={cn(
-          "w-8 h-8 mb-4 transition-colors duration-300",
-          xLogOnline && driverDisplayOnline ? "text-racing-green" : "text-racing-orange"
-        )} 
-        strokeWidth={1.5} 
-      />
-      <p className="text-muted-foreground text-sm font-medium mb-4 uppercase tracking-wide">
-        System Status
-      </p>
-      <div className="flex-1 flex flex-col justify-end gap-3">
+      <div className="flex items-center gap-3 mb-6">
+        <div className={cn(
+          "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-500",
+          allOnline ? "bg-racing-green/10" : "bg-racing-orange/10"
+        )}>
+          <Wifi 
+            className={cn(
+              "w-5 h-5 transition-colors duration-500",
+              allOnline ? "text-racing-green" : "text-racing-orange"
+            )} 
+          />
+        </div>
+        <p className="text-sm font-medium text-muted-foreground">
+          System Status
+        </p>
+      </div>
+      
+      <div className="flex-1 flex flex-col justify-end gap-4">
         <StatusItem 
           label="X-Log" 
           isOnline={xLogOnline} 
-          icon={<Wifi className="w-4 h-4" />} 
+          icon={<Wifi className="w-5 h-5" />} 
         />
         <StatusItem 
           label="Driver Display" 
           isOnline={driverDisplayOnline} 
-          icon={<Monitor className="w-4 h-4" />} 
+          icon={<Monitor className="w-5 h-5" />} 
         />
         <StatusItem 
           label="Motor" 
           isOnline={motorRunning} 
-          icon={<Zap className="w-4 h-4" />} 
+          icon={<Zap className="w-5 h-5" />} 
         />
       </div>
     </div>
