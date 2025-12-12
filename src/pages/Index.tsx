@@ -112,7 +112,7 @@ const Index = () => {
             <User className="w-5 h-5" />
             <span className="text-sm font-medium">Admin</span>
           </div>
-          <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground">
+          <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-muted-foreground/70 hover:bg-muted/50">
             <LogOut className="w-4 h-4" />
             <span className="hidden sm:inline">Sign out</span>
           </Button>
