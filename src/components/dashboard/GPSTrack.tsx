@@ -68,7 +68,6 @@ const flagLabels: Record<FlagColor, string> = {
 
 const GPSTrack = ({ position, className }: GPSTrackProps) => {
   const [selectedTrack, setSelectedTrack] = useState<TrackName>("stora-holm");
-  const [activeFlagId, setActiveFlagId] = useState<number | null>(null);
   const track = tracks[selectedTrack];
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -80,7 +79,6 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
   });
 
   const currentFlags = flags[selectedTrack];
-  const activeFlag = currentFlags.find(f => f.id === activeFlagId);
 
   // Initialize map
   useEffect(() => {
@@ -107,19 +105,10 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
   // Create flag color helper
   const getFlagColorHex = (color: FlagColor): string => {
     switch (color) {
-      case "yellow": return "#FACC15";
-      case "red": return "#EF4444";
-      case "black": return "#171717";
-      default: return "#FFFFFF"; // White for inactive/grey - more visible
-    }
-  };
-
-  const getFlagStrokeHex = (color: FlagColor): string => {
-    switch (color) {
-      case "yellow": return "#A16207";
-      case "red": return "#991B1B";
-      case "black": return "#000000";
-      default: return "#71717A"; // Grey stroke for inactive
+      case "yellow": return "#EAB308";
+      case "red": return "#DC2626";
+      case "black": return "#1a1a1a";
+      default: return "#71717A";
     }
   };
 
@@ -135,27 +124,18 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
     currentFlags.forEach((flag) => {
       const el = document.createElement("div");
       el.className = "flag-marker";
-      el.style.cssText = `
-        cursor: pointer;
-        filter: drop-shadow(0 0 6px rgba(255,255,255,0.8)) drop-shadow(0 2px 4px rgba(0,0,0,0.5));
-        transition: transform 0.2s ease;
-      `;
-      el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="${getFlagColorHex(flag.color)}" stroke="${getFlagStrokeHex(flag.color)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
-      
-      el.addEventListener("mouseenter", () => {
-        el.style.transform = "scale(1.2)";
-      });
-      el.addEventListener("mouseleave", () => {
-        el.style.transform = "scale(1)";
-      });
+      el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="${getFlagColorHex(flag.color)}" stroke="${getFlagColorHex(flag.color)}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
+      el.style.cursor = "pointer";
       
       const marker = new mapboxgl.Marker({ element: el })
         .setLngLat(flag.coords)
         .addTo(map.current!);
       
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
-        setActiveFlagId(prev => prev === flag.id ? null : flag.id);
+      el.addEventListener("click", () => {
+        const colors: FlagColor[] = ["grey", "yellow", "red", "black"];
+        const currentIndex = colors.indexOf(flag.color);
+        const nextColor = colors[(currentIndex + 1) % colors.length];
+        updateFlagColor(flag.id, nextColor);
       });
       
       markersRef.current.push(marker);
@@ -179,7 +159,6 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
         flag.id === flagId ? { ...flag, color } : flag
       ),
     }));
-    setActiveFlagId(null);
   };
 
   const resetFlags = () => {
@@ -231,7 +210,7 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
           <RotateCcw className="w-3 h-3" />
         </Button>
       </div>
-      <div className="relative flex-1 w-full min-h-0 rounded-lg overflow-hidden" onClick={() => setActiveFlagId(null)}>
+      <div className="relative flex-1 w-full min-h-0 rounded-lg overflow-hidden">
         {/* Mapbox Map */}
         <div ref={mapContainer} className="absolute inset-0 [&_.mapboxgl-ctrl-logo]:hidden" />
         
@@ -245,36 +224,6 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
             boxShadow: '0 0 12px hsl(var(--racing-green))'
           }}
         />
-
-        {/* Flag color picker popup */}
-        {activeFlag && (
-          <div className="absolute top-2 left-2 z-20 bg-card border border-border rounded-lg p-2 shadow-lg">
-            <div className="text-xs text-muted-foreground mb-2">Flag {activeFlag.id}</div>
-            <div className="flex gap-1">
-              {(Object.keys(flagColors) as FlagColor[]).map((color) => (
-                <button
-                  key={color}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    updateFlagColor(activeFlag.id, color);
-                  }}
-                  className={cn(
-                    "w-8 h-8 rounded flex items-center justify-center border-2 transition-all",
-                    activeFlag.color === color ? "border-foreground scale-110" : "border-transparent hover:border-muted-foreground"
-                  )}
-                  title={flagLabels[color]}
-                >
-                  <Flag 
-                    className="w-5 h-5" 
-                    fill={color === "grey" ? "#FFFFFF" : flagColors[color]}
-                    stroke={color === "grey" ? "#71717A" : flagColors[color]}
-                    strokeWidth={2}
-                  />
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
       <div className="flex justify-between text-xs text-muted-foreground mt-2">
         <span>Lat: {(50.123 + position.x * 0.001).toFixed(4)}°</span>
