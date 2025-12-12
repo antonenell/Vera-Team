@@ -50,7 +50,7 @@ const SystemStatus = ({ xLogOnline, driverDisplayOnline, motorRunning, className
   const allOnline = xLogOnline && driverDisplayOnline && motorRunning;
   
   return (
-    <div className={cn("bg-card rounded-2xl border border-border/50 p-6 flex flex-col", className)}>
+    <div className={cn("glass-card relative rounded-2xl p-6 flex flex-col", className)}>
       <div className="flex items-center gap-3 mb-6">
         <div className={cn(
           "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-500",

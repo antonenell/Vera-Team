@@ -43,7 +43,7 @@ const RaceTimer = ({
   const isBehind = totalDelta > 0;
   
   return (
-    <div className={cn("bg-card rounded-2xl border border-border/50 p-6 flex flex-col", className)}>
+    <div className={cn("glass-card relative rounded-2xl p-6 flex flex-col", className)}>
       <Clock 
         className={cn(
           "w-8 h-8 mb-4",

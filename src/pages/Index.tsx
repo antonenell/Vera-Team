@@ -181,7 +181,7 @@ const Index = () => {
         />
 
         {/* Laps Progress */}
-        <div className="bg-card rounded-2xl border border-border/50 p-6 col-span-2 md:col-span-2 flex flex-col">
+        <div className="glass-card relative rounded-2xl p-6 col-span-2 md:col-span-2 flex flex-col">
           <Activity className="w-8 h-8 mb-4 text-racing-blue" strokeWidth={1.5} />
           <p className="text-muted-foreground text-sm font-medium mb-2 uppercase tracking-wide">
             Race Progress
@@ -217,7 +217,7 @@ const Index = () => {
         </div>
 
         {/* Best Lap (Closest to Target) */}
-        <div className="bg-card rounded-2xl border border-border/50 p-6 col-span-2 flex flex-col">
+        <div className="glass-card relative rounded-2xl p-6 col-span-2 flex flex-col">
           <Activity className="w-8 h-8 mb-4 text-racing-green" strokeWidth={1.5} />
           <p className="text-muted-foreground text-sm font-medium mb-2 uppercase tracking-wide">
             Best Lap (Target: {Math.floor(TARGET_LAP_TIME / 60)}:{Math.round(TARGET_LAP_TIME % 60).toString().padStart(2, "0")})

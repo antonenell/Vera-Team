@@ -101,7 +101,7 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
   };
 
   return (
-    <div className={cn("bg-card rounded-2xl border border-border/50 p-4 flex flex-col", className)}>
+    <div className={cn("glass-card relative rounded-2xl p-4 flex flex-col", className)}>
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <MapPin className="w-5 h-5 text-racing-green" strokeWidth={1.5} />

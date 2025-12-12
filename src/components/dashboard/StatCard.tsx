@@ -39,7 +39,7 @@ const StatCard = ({
   return (
     <div
       className={cn(
-        "bg-card rounded-2xl border border-border/50 transition-all duration-300 hover:border-border flex flex-col",
+        "glass-card relative rounded-2xl transition-all duration-300 hover:border-border/50 flex flex-col",
         sizeClasses[size],
         className
       )}
