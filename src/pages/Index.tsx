@@ -121,13 +121,11 @@ const Index = () => {
 
       {/* Main Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 auto-rows-fr">
-        {/* GPS Track - Square to fit 330m radius */}
-        <div className="col-span-2 row-span-2 aspect-square">
-          <GPSTrack 
-            position={carPosition} 
-            className="h-full w-full" 
-          />
-        </div>
+        {/* GPS Track - Large */}
+        <GPSTrack 
+          position={carPosition} 
+          className="col-span-2 row-span-2" 
+        />
 
         {/* Speed */}
         <StatCard
