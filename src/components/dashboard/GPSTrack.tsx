@@ -90,11 +90,20 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
       container: mapContainer.current,
       style: "mapbox://styles/mapbox/satellite-v9",
       bounds: track.bounds,
-      fitBoundsOptions: { padding: 10 },
+      fitBoundsOptions: { padding: 20 },
       attributionControl: false,
     });
 
+    // Resize map when container size changes
+    const resizeObserver = new ResizeObserver(() => {
+      map.current?.resize();
+      map.current?.fitBounds(track.bounds, { padding: 20 });
+    });
+    
+    resizeObserver.observe(mapContainer.current);
+
     return () => {
+      resizeObserver.disconnect();
       markersRef.current.forEach(m => m.remove());
       markersRef.current = [];
       map.current?.remove();
