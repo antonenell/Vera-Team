@@ -80,6 +80,14 @@ const Index = () => {
     setLapStartTime(timeLeft);
   };
 
+  const handleReset = () => {
+    setTimeLeft(RACE_DURATION_SECONDS);
+    setLapStartTime(RACE_DURATION_SECONDS);
+    setCurrentLap(0);
+    setLapTimes([]);
+    setIsTimerRunning(false);
+  };
+
   return (
     <div className="min-h-screen bg-background p-4 md:p-6 lg:p-8">
       {/* Header */}
@@ -129,6 +137,7 @@ const Index = () => {
           isRunning={isTimerRunning}
           onStartStop={handleStartStop}
           onLap={handleLap}
+          onReset={handleReset}
           lapTimes={lapTimes}
           targetLapTime={TARGET_LAP_TIME}
           className="col-span-2 row-span-2"

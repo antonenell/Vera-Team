@@ -1,4 +1,4 @@
-import { Clock, Play, Pause, Flag, TrendingUp, TrendingDown } from "lucide-react";
+import { Clock, Play, Pause, Flag, TrendingUp, TrendingDown, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -8,6 +8,7 @@ interface RaceTimerProps {
   isRunning: boolean;
   onStartStop: () => void;
   onLap: () => void;
+  onReset: () => void;
   lapTimes: number[];
   targetLapTime: number;
   className?: string;
@@ -25,6 +26,7 @@ const RaceTimer = ({
   isRunning,
   onStartStop,
   onLap,
+  onReset,
   lapTimes,
   targetLapTime,
   className 
@@ -88,6 +90,14 @@ const RaceTimer = ({
           >
             <Flag className="w-4 h-4" />
             Lap
+          </Button>
+          <Button
+            onClick={onReset}
+            variant="outline"
+            size="icon"
+            disabled={isRunning}
+          >
+            <RotateCcw className="w-4 h-4" />
           </Button>
         </div>
         
