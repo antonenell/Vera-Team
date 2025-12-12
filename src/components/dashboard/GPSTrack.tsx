@@ -175,7 +175,7 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
       </div>
       <div className="relative flex-1 w-full min-h-0 rounded-lg overflow-hidden">
         {/* Mapbox Map */}
-        <div ref={mapContainer} className="absolute inset-0" />
+        <div ref={mapContainer} className="absolute inset-0 [&_.mapboxgl-ctrl-logo]:hidden" />
         
         {/* Car position overlay */}
         <div 
