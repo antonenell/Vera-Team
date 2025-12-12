@@ -23,8 +23,7 @@ type TrackName = "stora-holm" | "silesia-ring";
 
 interface TurnFlag {
   id: number;
-  x: number;
-  y: number;
+  coords: [number, number]; // [lng, lat]
   color: FlagColor;
 }
 
@@ -38,24 +37,18 @@ interface TrackConfig {
 const tracks: Record<TrackName, TrackConfig> = {
   "stora-holm": {
     name: "Stora Holm",
-    // Upper left: 57°46'40.3"N 11°54'45.7"E, Lower right: 57°46'28.3"N 11°55'22.0"E
     bounds: [[11.9127, 57.7745], [11.9228, 57.7779]],
     defaultFlags: [
-      { id: 1, x: 35, y: 28 },
-      { id: 2, x: 65, y: 28 },
-      { id: 3, x: 50, y: 71 },
+      { id: 1, coords: [11.9141, 57.7771] }, // 57°46'37.5"N 11°54'50.8"E
+      { id: 2, coords: [11.9220, 57.7765] }, // 57°46'35.4"N 11°55'19.3"E
+      { id: 3, coords: [11.9196, 57.7751] }, // 57°46'30.5"N 11°55'10.6"E
+      { id: 4, coords: [11.9165, 57.7760] }, // 57°46'33.7"N 11°54'59.4"E
     ],
   },
   "silesia-ring": {
     name: "Silesia Ring",
-    // Center: 50°31'44.7"N 18°05'39.8"E (50.5291, 18.0944)
     bounds: [[18.0844, 50.5241], [18.1044, 50.5341]],
-    defaultFlags: [
-      { id: 1, x: 30, y: 21 },
-      { id: 2, x: 70, y: 21 },
-      { id: 3, x: 70, y: 71 },
-      { id: 4, x: 70, y: 100 },
-    ],
+    defaultFlags: [],
   },
 };
 
@@ -78,6 +71,7 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
   const track = tracks[selectedTrack];
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
+  const markersRef = useRef<mapboxgl.Marker[]>([]);
   
   const [flags, setFlags] = useState<Record<TrackName, TurnFlag[]>>({
     "stora-holm": tracks["stora-holm"].defaultFlags.map(f => ({ ...f, color: "grey" as FlagColor })),
@@ -101,10 +95,52 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
     });
 
     return () => {
+      markersRef.current.forEach(m => m.remove());
+      markersRef.current = [];
       map.current?.remove();
       map.current = null;
     };
   }, []);
+
+  // Create flag color helper
+  const getFlagColorHex = (color: FlagColor): string => {
+    switch (color) {
+      case "yellow": return "#EAB308";
+      case "red": return "#DC2626";
+      case "black": return "#1a1a1a";
+      default: return "#71717A";
+    }
+  };
+
+  // Update markers when flags or track changes
+  useEffect(() => {
+    if (!map.current) return;
+
+    // Remove existing markers
+    markersRef.current.forEach(m => m.remove());
+    markersRef.current = [];
+
+    // Add new markers for current track
+    currentFlags.forEach((flag) => {
+      const el = document.createElement("div");
+      el.className = "flag-marker";
+      el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="${getFlagColorHex(flag.color)}" stroke="${getFlagColorHex(flag.color)}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
+      el.style.cursor = "pointer";
+      
+      const marker = new mapboxgl.Marker({ element: el })
+        .setLngLat(flag.coords)
+        .addTo(map.current!);
+      
+      el.addEventListener("click", () => {
+        const colors: FlagColor[] = ["grey", "yellow", "red", "black"];
+        const currentIndex = colors.indexOf(flag.color);
+        const nextColor = colors[(currentIndex + 1) % colors.length];
+        updateFlagColor(flag.id, nextColor);
+      });
+      
+      markersRef.current.push(marker);
+    });
+  }, [currentFlags, selectedTrack]);
 
   // Update map when track changes
   useEffect(() => {
@@ -178,9 +214,9 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
         {/* Mapbox Map */}
         <div ref={mapContainer} className="absolute inset-0 [&_.mapboxgl-ctrl-logo]:hidden" />
         
-        {/* Car position overlay */}
+        {/* Car position overlay - will be replaced with actual GPS marker later */}
         <div 
-          className="absolute w-3 h-3 rounded-full bg-racing-green animate-pulse z-10"
+          className="absolute w-3 h-3 rounded-full bg-racing-green animate-pulse z-10 pointer-events-none"
           style={{ 
             left: `${position.x}%`, 
             top: `${position.y}%`,
@@ -188,48 +224,6 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
             boxShadow: '0 0 12px hsl(var(--racing-green))'
           }}
         />
-        
-        {/* Interactive Flags */}
-        {currentFlags.map((flag) => (
-          <DropdownMenu key={flag.id}>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="absolute transform -translate-x-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted/50 transition-colors cursor-pointer"
-                style={{ 
-                  left: `${flag.x}%`, 
-                  top: `${flag.y}%`,
-                }}
-              >
-                <Flag 
-                  className="w-4 h-4" 
-                  fill={flagColors[flag.color]}
-                  stroke={flag.color === "grey" ? "hsl(var(--muted-foreground))" : flagColors[flag.color]}
-                  strokeWidth={1.5}
-                />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="bg-card border-border z-50">
-              {(Object.keys(flagColors) as FlagColor[]).map((color) => (
-                <DropdownMenuItem
-                  key={color}
-                  onClick={() => updateFlagColor(flag.id, color)}
-                  className={cn(
-                    "flex items-center gap-2 cursor-pointer",
-                    flag.color === color && "bg-muted"
-                  )}
-                >
-                  <Flag 
-                    className="w-4 h-4" 
-                    fill={flagColors[color]}
-                    stroke={flagColors[color]}
-                    strokeWidth={1.5}
-                  />
-                  <span>{flagLabels[color]}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ))}
       </div>
       <div className="flex justify-between text-xs text-muted-foreground mt-2">
         <span>Lat: {(50.123 + position.x * 0.001).toFixed(4)}°</span>
