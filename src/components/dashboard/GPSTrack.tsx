@@ -136,15 +136,11 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
       
       // Create popup for color selection
       const popupContent = document.createElement("div");
-      popupContent.className = "flag-color-popup";
       popupContent.style.cssText = `
         display: flex;
         flex-direction: column;
         gap: 4px;
         padding: 8px;
-        background: hsl(222.2 47.4% 11.2%);
-        border-radius: 8px;
-        border: 1px solid hsl(217.2 32.6% 17.5%);
       `;
       
       const colors: { color: FlagColor; label: string }[] = [
@@ -191,12 +187,18 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
         closeButton: false,
         closeOnClick: true,
         offset: 15,
-        className: "flag-popup",
+        className: "flag-popup-custom",
       }).setDOMContent(popupContent);
       
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
+      el.addEventListener("mouseenter", () => {
         popup.setLngLat(flag.coords).addTo(map.current!);
+      });
+      
+      el.addEventListener("mouseleave", (e) => {
+        const relatedTarget = e.relatedTarget as HTMLElement;
+        if (!relatedTarget?.closest('.mapboxgl-popup')) {
+          popup.remove();
+        }
       });
       
       markersRef.current.push(marker);
@@ -272,6 +274,20 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
         </Button>
       </div>
       <div className="relative flex-1 w-full min-h-0 rounded-lg overflow-hidden">
+        {/* Custom popup styles */}
+        <style>{`
+          .flag-popup-custom .mapboxgl-popup-content {
+            background: hsl(222.2 47.4% 11.2%);
+            border-radius: 8px;
+            border: 1px solid hsl(217.2 32.6% 17.5%);
+            padding: 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+          }
+          .flag-popup-custom .mapboxgl-popup-tip {
+            border-top-color: hsl(222.2 47.4% 11.2%);
+            border-bottom-color: hsl(222.2 47.4% 11.2%);
+          }
+        `}</style>
         {/* Mapbox Map */}
         <div ref={mapContainer} className="absolute inset-0 [&_.mapboxgl-ctrl-logo]:hidden" />
         
