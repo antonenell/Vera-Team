@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Gauge, Thermometer, Activity, User, LogOut } from "lucide-react";
 import StatCard from "@/components/dashboard/StatCard";
 import GPSTrack from "@/components/dashboard/GPSTrack";
-import MotorStatus from "@/components/dashboard/MotorStatus";
+import SystemStatus from "@/components/dashboard/SystemStatus";
 import LapTimes from "@/components/dashboard/LapTimes";
 import RaceTimer from "@/components/dashboard/RaceTimer";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,8 @@ const Index = () => {
   const [speed, setSpeed] = useState(42);
   const [temperature, setTemperature] = useState(78);
   const [motorRunning, setMotorRunning] = useState(true);
+  const [xLogOnline, setXLogOnline] = useState(true);
+  const [driverDisplayOnline, setDriverDisplayOnline] = useState(true);
   const [timeLeft, setTimeLeft] = useState(RACE_DURATION_SECONDS);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [lapStartTime, setLapStartTime] = useState(RACE_DURATION_SECONDS);
@@ -160,9 +162,11 @@ const Index = () => {
           className="col-span-1"
         />
 
-        {/* Motor Status */}
-        <MotorStatus 
-          isRunning={motorRunning} 
+        {/* System Status */}
+        <SystemStatus 
+          xLogOnline={xLogOnline}
+          driverDisplayOnline={driverDisplayOnline}
+          motorRunning={motorRunning}
           className="col-span-1"
         />
 
