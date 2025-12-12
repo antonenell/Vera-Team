@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { MapPin, Flag } from "lucide-react";
+import { MapPin, Flag, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,13 +55,28 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
     ));
   };
 
+  const resetFlags = () => {
+    setFlags(prev => prev.map(flag => ({ ...flag, color: "grey" as FlagColor })));
+  };
+
   return (
     <div className={cn("bg-card rounded-2xl border border-border/50 p-4 flex flex-col", className)}>
-      <div className="flex items-center gap-2 mb-2">
-        <MapPin className="w-5 h-5 text-racing-green" strokeWidth={1.5} />
-        <p className="text-muted-foreground text-sm font-medium uppercase tracking-wide">
-          Track Position
-        </p>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <MapPin className="w-5 h-5 text-racing-green" strokeWidth={1.5} />
+          <p className="text-muted-foreground text-sm font-medium uppercase tracking-wide">
+            Track Position
+          </p>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={resetFlags}
+          title="Reset all flags"
+        >
+          <RotateCcw className="w-3 h-3" />
+        </Button>
       </div>
       <div className="relative flex-1 w-full min-h-0">
         <svg viewBox="0 0 100 70" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
