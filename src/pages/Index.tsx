@@ -16,8 +16,10 @@ const Index = () => {
   const [temperature, setTemperature] = useState(78);
   const [motorRunning, setMotorRunning] = useState(true);
   const [timeLeft, setTimeLeft] = useState(RACE_DURATION_SECONDS);
-  const [currentLap, setCurrentLap] = useState(4);
-  const [lapTimes, setLapTimes] = useState([185, 182, 179, 183]);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const [lapStartTime, setLapStartTime] = useState(RACE_DURATION_SECONDS);
+  const [currentLap, setCurrentLap] = useState(0);
+  const [lapTimes, setLapTimes] = useState<number[]>([]);
   const [carPosition, setCarPosition] = useState({ x: 50, y: 20 });
 
   // Simulate live data updates
@@ -47,14 +49,31 @@ const Index = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Countdown timer
+  // Countdown timer - only runs when isTimerRunning is true
   useEffect(() => {
+    if (!isTimerRunning) return;
+    
     const timer = setInterval(() => {
       setTimeLeft(prev => Math.max(0, prev - 1));
     }, 1000);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [isTimerRunning]);
+
+  const handleStartStop = () => {
+    if (!isTimerRunning) {
+      // Starting the timer
+      setLapStartTime(timeLeft);
+    }
+    setIsTimerRunning(prev => !prev);
+  };
+
+  const handleLap = () => {
+    const lapTime = lapStartTime - timeLeft;
+    setLapTimes(prev => [...prev, lapTime]);
+    setCurrentLap(prev => prev + 1);
+    setLapStartTime(timeLeft);
+  };
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-6 lg:p-8">
@@ -102,6 +121,9 @@ const Index = () => {
         <RaceTimer
           timeLeftSeconds={timeLeft}
           totalSeconds={RACE_DURATION_SECONDS}
+          isRunning={isTimerRunning}
+          onStartStop={handleStartStop}
+          onLap={handleLap}
           className="col-span-2 row-span-2"
         />
 
