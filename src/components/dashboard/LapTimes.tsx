@@ -7,6 +7,7 @@ interface LapTimesProps {
   currentLap: number;
   totalLaps: number;
   targetLapTime: number; // in seconds
+  currentLapElapsed?: number; // live elapsed time for current lap
   className?: string;
 }
 
@@ -21,7 +22,7 @@ const formatDelta = (delta: number): string => {
   return `${sign}${delta}s`;
 };
 
-const LapTimes = ({ lapTimes, currentLap, totalLaps, targetLapTime, className }: LapTimesProps) => {
+const LapTimes = ({ lapTimes, currentLap, totalLaps, targetLapTime, currentLapElapsed = 0, className }: LapTimesProps) => {
   const bestLap = lapTimes.length > 0 ? Math.min(...lapTimes) : 0;
   
   // Calculate cumulative delta from target pace
@@ -51,6 +52,18 @@ const LapTimes = ({ lapTimes, currentLap, totalLaps, targetLapTime, className }:
       
       <ScrollArea className="flex-1 -mx-2 px-2">
         <div className="space-y-2">
+          {/* Current lap indicator */}
+          {currentLap > lapTimes.length && currentLapElapsed > 0 && (
+            <div className="flex justify-between items-center py-2 px-3 rounded-lg bg-racing-cyan/20 border border-racing-cyan/30 animate-pulse">
+              <span className="text-racing-cyan font-medium">
+                Lap {lapTimes.length + 1}
+              </span>
+              <span className="font-mono font-bold text-racing-cyan">
+                {formatTime(currentLapElapsed)}
+                <span className="ml-2 text-xs">LIVE</span>
+              </span>
+            </div>
+          )}
           {lapTimes.map((time, index) => {
             const cumulativeDelta = getCumulativeDelta(index);
             const isAhead = cumulativeDelta < 0;

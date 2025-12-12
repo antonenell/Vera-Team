@@ -23,6 +23,9 @@ const Index = () => {
   const [currentLap, setCurrentLap] = useState(0);
   const [lapTimes, setLapTimes] = useState<number[]>([]);
   const [carPosition, setCarPosition] = useState({ x: 50, y: 20 });
+  
+  // Current lap elapsed time
+  const currentLapElapsed = isTimerRunning && currentLap > 0 ? lapStartTime - timeLeft : 0;
 
   // Simulate live data updates
   useEffect(() => {
@@ -154,6 +157,7 @@ const Index = () => {
           currentLap={currentLap}
           totalLaps={TOTAL_LAPS}
           targetLapTime={TARGET_LAP_TIME}
+          currentLapElapsed={currentLapElapsed}
           className="col-span-2 md:col-span-2 row-span-2"
         />
 
