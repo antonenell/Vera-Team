@@ -14,6 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
+      race_state: {
+        Row: {
+          current_lap: number
+          elapsed_seconds: number
+          id: string
+          is_running: boolean
+          lap_times: number[]
+          start_time: string | null
+          total_race_time: number
+          updated_at: string
+        }
+        Insert: {
+          current_lap?: number
+          elapsed_seconds?: number
+          id?: string
+          is_running?: boolean
+          lap_times?: number[]
+          start_time?: string | null
+          total_race_time?: number
+          updated_at?: string
+        }
+        Update: {
+          current_lap?: number
+          elapsed_seconds?: number
+          id?: string
+          is_running?: boolean
+          lap_times?: number[]
+          start_time?: string | null
+          total_race_time?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      track_flags: {
+        Row: {
+          color: string
+          flag_id: string
+          id: string
+          track_id: string
+          updated_at: string
+        }
+        Insert: {
+          color?: string
+          flag_id: string
+          id?: string
+          track_id: string
+          updated_at?: string
+        }
+        Update: {
+          color?: string
+          flag_id?: string
+          id?: string
+          track_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
