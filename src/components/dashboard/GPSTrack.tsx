@@ -88,7 +88,7 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
     
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/dark-v11",
+      style: "mapbox://styles/carlberge/cmj42ghcf009601r47hgyaiku",
       bounds: track.bounds,
       fitBoundsOptions: { padding: 20 },
       attributionControl: false,
