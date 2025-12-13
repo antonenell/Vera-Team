@@ -9,30 +9,32 @@ interface AnimatedNumberProps {
 
 const AnimatedNumber = ({ value, className }: AnimatedNumberProps) => {
   const [displayValue, setDisplayValue] = useState(value);
-  const previousValue = useRef(value);
+  const targetRef = useRef(value);
+  const currentRef = useRef(value);
   const animationRef = useRef<number>();
 
   useEffect(() => {
-    const startValue = previousValue.current;
-    const endValue = value;
-    const duration = 300; // ms
-    const startTime = performance.now();
-
-    const animate = (currentTime: number) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
+    targetRef.current = value;
+    
+    const animate = () => {
+      const current = currentRef.current;
+      const target = targetRef.current;
+      const diff = target - current;
       
-      // Ease-out cubic for smooth deceleration
-      const easeOut = 1 - Math.pow(1 - progress, 3);
+      // Smooth lerp with damping factor (lower = smoother but slower)
+      const damping = 0.08;
+      const newValue = current + diff * damping;
       
-      const currentValue = startValue + (endValue - startValue) * easeOut;
-      setDisplayValue(currentValue);
-
-      if (progress < 1) {
-        animationRef.current = requestAnimationFrame(animate);
-      } else {
-        previousValue.current = endValue;
+      // Stop animating when very close to target
+      if (Math.abs(diff) < 0.01) {
+        currentRef.current = target;
+        setDisplayValue(target);
+        return;
       }
+      
+      currentRef.current = newValue;
+      setDisplayValue(newValue);
+      animationRef.current = requestAnimationFrame(animate);
     };
 
     animationRef.current = requestAnimationFrame(animate);
