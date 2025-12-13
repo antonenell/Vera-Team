@@ -305,6 +305,23 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
           }}
         />
       </div>
+      {/* Flag legend with frosted glass effect */}
+      <div className="mt-3 p-3 rounded-xl bg-background/30 backdrop-blur-md border border-border/30 shadow-lg">
+        <div className="flex items-center gap-3 justify-center">
+          {(["grey", "yellow", "red", "black"] as FlagColor[]).map((color) => (
+            <div key={color} className="flex items-center gap-1.5">
+              <Flag 
+                className="w-4 h-4" 
+                style={{ 
+                  fill: flagColors[color], 
+                  color: flagColors[color] 
+                }} 
+              />
+              <span className="text-xs text-muted-foreground">{flagLabels[color]}</span>
+            </div>
+          ))}
+        </div>
+      </div>
       <div className="flex justify-between text-xs text-muted-foreground mt-2">
         <span>Lat: {(50.123 + position.x * 0.001).toFixed(4)}°</span>
         <span>Lon: {(8.234 + position.y * 0.001).toFixed(4)}°</span>
