@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Gauge, Thermometer, Activity, User, LogOut, LogIn } from "lucide-react";
 import StatCard from "@/components/dashboard/StatCard";
@@ -32,34 +31,16 @@ const Index = () => {
     reset,
   } = useRaceState(isAdmin);
   
-  // Simulated telemetry data (local only)
-  const [rpm, setRpm] = useState(4500);
-  const [speed, setSpeed] = useState(42);
-  const [temperature, setTemperature] = useState(78);
-  const [motorRunning, setMotorRunning] = useState(true);
-  const [xLogOnline, setXLogOnline] = useState(true);
-  const [driverDisplayOnline, setDriverDisplayOnline] = useState(true);
-  const [carPosition, setCarPosition] = useState({ x: 50, y: 20 });
-
-  // Simulate live data updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setRpm(prev => Math.max(0, Math.min(8000, prev + (Math.random() - 0.5) * 500)));
-      setSpeed(prev => Math.max(0, Math.min(80, prev + (Math.random() - 0.5) * 5)));
-      setTemperature(prev => Math.max(60, Math.min(95, prev + (Math.random() - 0.5) * 2)));
-      setCarPosition(prev => {
-        const angle = Math.atan2(prev.y - 50, prev.x - 50) + 0.05;
-        const radiusX = 40;
-        const radiusY = 30;
-        return {
-          x: 50 + radiusX * Math.cos(angle),
-          y: 50 + radiusY * Math.sin(angle)
-        };
-      });
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, []);
+  // Telemetry data - defaults for when not connected
+  const rpm = 0;
+  const speed = 0;
+  const temperature = null; // null = not connected
+  const motorRunning = false;
+  const xLogOnline = false;
+  const driverDisplayOnline = false;
+  
+  // Static GPS position - will be connected to real data later
+  const carPosition = { x: 50, y: 50 };
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-6 lg:p-8 relative overflow-hidden">
@@ -144,11 +125,11 @@ const Index = () => {
         {/* Temperature */}
         <StatCard
           title="Motor Temp"
-          value={Math.round(temperature)}
-          unit="°C"
+          value={temperature !== null ? Math.round(temperature) : "--"}
+          unit={temperature !== null ? "°C" : ""}
           icon={Thermometer}
-          iconColor={temperature > 85 ? "text-racing-red" : "text-racing-green"}
-          valueColor={temperature > 85 ? "text-racing-red" : "text-racing-green"}
+          iconColor={temperature !== null && temperature > 85 ? "text-racing-red" : "text-muted-foreground"}
+          valueColor={temperature !== null && temperature > 85 ? "text-racing-red" : "text-muted-foreground"}
           className="col-span-1"
         />
 
