@@ -12,6 +12,7 @@ interface RaceTimerProps {
   lapTimes: number[];
   targetLapTime: number;
   className?: string;
+  isAdmin?: boolean;
 }
 
 const formatTime = (seconds: number): string => {
@@ -29,7 +30,8 @@ const RaceTimer = ({
   onReset,
   lapTimes,
   targetLapTime,
-  className 
+  className,
+  isAdmin = false,
 }: RaceTimerProps) => {
   const progress = (timeLeftSeconds / totalSeconds) * 100;
   const isLowTime = timeLeftSeconds < 300; // Less than 5 minutes
@@ -63,43 +65,45 @@ const RaceTimer = ({
           {formatTime(timeLeftSeconds)}
         </span>
         
-        {/* Controls */}
-        <div className="flex gap-2 mb-4">
-          <Button
-            onClick={onStartStop}
-            variant={isRunning ? "destructive" : "default"}
-            className="flex-1 gap-2"
-          >
-            {isRunning ? (
-              <>
-                <Pause className="w-4 h-4" />
-                Stop
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4" />
-                Start
-              </>
-            )}
-          </Button>
-          <Button
-            onClick={onLap}
-            variant="secondary"
-            className="flex-1 gap-2"
-            disabled={!isRunning}
-          >
-            <Flag className="w-4 h-4" />
-            Lap
-          </Button>
-          <Button
-            onClick={onReset}
-            variant="outline"
-            size="icon"
-            disabled={isRunning}
-          >
-            <RotateCcw className="w-4 h-4" />
-          </Button>
-        </div>
+        {/* Controls - Only visible for admins */}
+        {isAdmin && (
+          <div className="flex gap-2 mb-4">
+            <Button
+              onClick={onStartStop}
+              variant={isRunning ? "destructive" : "default"}
+              className="flex-1 gap-2"
+            >
+              {isRunning ? (
+                <>
+                  <Pause className="w-4 h-4" />
+                  Stop
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  Start
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={onLap}
+              variant="secondary"
+              className="flex-1 gap-2"
+              disabled={!isRunning}
+            >
+              <Flag className="w-4 h-4" />
+              Lap
+            </Button>
+            <Button
+              onClick={onReset}
+              variant="outline"
+              size="icon"
+              disabled={isRunning}
+            >
+              <RotateCcw className="w-4 h-4" />
+            </Button>
+          </div>
+        )}
         
         {/* Progress bar */}
         <div className="h-2 bg-muted rounded-full overflow-hidden">

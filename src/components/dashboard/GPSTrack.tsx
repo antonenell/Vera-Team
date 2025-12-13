@@ -16,6 +16,7 @@ const MAPBOX_TOKEN = "pk.eyJ1IjoiY2FybGJlcmdlIiwiYSI6ImNsMnh3OXZrYTBsNzUzaWp6Nzl
 interface GPSTrackProps {
   position: { x: number; y: number };
   className?: string;
+  isAdmin?: boolean;
 }
 
 type FlagColor = "grey" | "yellow" | "red" | "black";
@@ -66,7 +67,7 @@ const flagLabels: Record<FlagColor, string> = {
   black: "Disqualified",
 };
 
-const GPSTrack = ({ position, className }: GPSTrackProps) => {
+const GPSTrack = ({ position, className, isAdmin = false }: GPSTrackProps) => {
   const [selectedTrack, setSelectedTrack] = useState<TrackName>("stora-holm");
   const track = tracks[selectedTrack];
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -134,7 +135,7 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
       const el = document.createElement("div");
       el.className = "flag-marker";
       el.style.cssText = `
-        cursor: pointer;
+        cursor: ${isAdmin ? 'pointer' : 'default'};
         display: flex;
         align-items: center;
         justify-content: center;
@@ -209,14 +210,17 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
         className: "flag-popup-custom",
       }).setDOMContent(popupContent);
       
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
-        popup.setLngLat(flag.coords).addTo(map.current!);
-      });
+      // Only allow click interaction for admins
+      if (isAdmin) {
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          popup.setLngLat(flag.coords).addTo(map.current!);
+        });
+      }
       
       markersRef.current.push(marker);
     });
-  }, [currentFlags, selectedTrack]);
+  }, [currentFlags, selectedTrack, isAdmin]);
 
   // Update map when track changes
   useEffect(() => {
@@ -276,15 +280,17 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6"
-          onClick={resetFlags}
-          title="Reset all flags"
-        >
-          <RotateCcw className="w-3 h-3" />
-        </Button>
+        {isAdmin && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={resetFlags}
+            title="Reset all flags"
+          >
+            <RotateCcw className="w-3 h-3" />
+          </Button>
+        )}
       </div>
       <div className="relative flex-1 w-full min-h-0 rounded-lg overflow-hidden">
         {/* Custom popup styles */}
