@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
-import { Gauge, Thermometer, Activity, User, LogOut } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Gauge, Thermometer, Activity, User, LogOut, LogIn } from "lucide-react";
 import StatCard from "@/components/dashboard/StatCard";
 import GPSTrack from "@/components/dashboard/GPSTrack";
 import SystemStatus from "@/components/dashboard/SystemStatus";
 import LapTimes from "@/components/dashboard/LapTimes";
 import RaceTimer from "@/components/dashboard/RaceTimer";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
 import chalmersLogo from "@/assets/chalmersverateam.svg";
 
 const TOTAL_LAPS = 11;
@@ -14,6 +16,8 @@ const TARGET_RACE_TIME = 34 * 60; // 34 minutes (1 min safety margin)
 const TARGET_LAP_TIME = TARGET_RACE_TIME / TOTAL_LAPS; // ~185.5 seconds per lap
 
 const Index = () => {
+  const { user, isAdmin, signOut } = useAuth();
+  
   // Simulated telemetry data
   const [rpm, setRpm] = useState(4500);
   const [speed, setSpeed] = useState(42);
@@ -70,6 +74,7 @@ const Index = () => {
   }, [isTimerRunning]);
 
   const handleStartStop = () => {
+    if (!isAdmin) return;
     if (!isTimerRunning) {
       // Starting the timer
       setLapStartTime(timeLeft);
@@ -78,6 +83,7 @@ const Index = () => {
   };
 
   const handleLap = () => {
+    if (!isAdmin) return;
     const lapTime = lapStartTime - timeLeft;
     setLapTimes(prev => [...prev, lapTime]);
     setCurrentLap(prev => prev + 1);
@@ -85,6 +91,7 @@ const Index = () => {
   };
 
   const handleReset = () => {
+    if (!isAdmin) return;
     setTimeLeft(RACE_DURATION_SECONDS);
     setLapStartTime(RACE_DURATION_SECONDS);
     setCurrentLap(0);
@@ -108,14 +115,37 @@ const Index = () => {
       <header className="mb-8 flex items-center justify-between">
         <img src={chalmersLogo} alt="Chalmers Vera Team" className="h-12 w-auto" />
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <User className="w-5 h-5" />
-            <span className="text-sm font-medium">Admin</span>
-          </div>
-          <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-muted-foreground/70 hover:bg-muted/50">
-            <LogOut className="w-4 h-4" />
-            <span className="hidden sm:inline">Sign out</span>
-          </Button>
+          {user ? (
+            <>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <User className="w-5 h-5" />
+                <span className="text-sm font-medium">
+                  {isAdmin ? "Admin" : "Spectator"}
+                </span>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="gap-2 text-muted-foreground hover:text-muted-foreground/70 hover:bg-muted/50"
+                onClick={() => signOut()}
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="hidden sm:inline">Sign out</span>
+              </Button>
+            </>
+          ) : (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="gap-2 text-muted-foreground hover:text-muted-foreground/70 hover:bg-muted/50"
+              asChild
+            >
+              <Link to="/auth">
+                <LogIn className="w-4 h-4" />
+                <span className="hidden sm:inline">Admin Sign In</span>
+              </Link>
+            </Button>
+          )}
         </div>
       </header>
 
@@ -124,7 +154,8 @@ const Index = () => {
         {/* GPS Track - Large */}
         <GPSTrack 
           position={carPosition} 
-          className="col-span-2 md:col-span-3 row-span-2" 
+          className="col-span-2 md:col-span-3 row-span-2"
+          isAdmin={isAdmin}
         />
 
         {/* Speed */}
@@ -178,6 +209,7 @@ const Index = () => {
           lapTimes={lapTimes}
           targetLapTime={TARGET_LAP_TIME}
           className="col-span-2 row-span-2"
+          isAdmin={isAdmin}
         />
 
         {/* Lap Times - Tall */}
