@@ -1,5 +1,56 @@
 import { cn } from "@/lib/utils";
 import { LucideIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+
+interface AnimatedNumberProps {
+  value: number;
+  className?: string;
+}
+
+const AnimatedNumber = ({ value, className }: AnimatedNumberProps) => {
+  const [displayValue, setDisplayValue] = useState(value);
+  const previousValue = useRef(value);
+  const animationRef = useRef<number>();
+
+  useEffect(() => {
+    const startValue = previousValue.current;
+    const endValue = value;
+    const duration = 300; // ms
+    const startTime = performance.now();
+
+    const animate = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Ease-out cubic for smooth deceleration
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      
+      const currentValue = startValue + (endValue - startValue) * easeOut;
+      setDisplayValue(currentValue);
+
+      if (progress < 1) {
+        animationRef.current = requestAnimationFrame(animate);
+      } else {
+        previousValue.current = endValue;
+      }
+    };
+
+    animationRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [value]);
+
+  // Format: show decimal only if needed, round to reasonable precision
+  const formattedValue = Number.isInteger(value) 
+    ? Math.round(displayValue).toString()
+    : displayValue.toFixed(1);
+
+  return <span className={className}>{formattedValue}</span>;
+};
 
 interface StatCardProps {
   title: string;
@@ -36,6 +87,8 @@ const StatCard = ({
     large: "text-5xl",
   };
 
+  const isNumeric = typeof value === "number";
+
   return (
     <div
       className={cn(
@@ -50,9 +103,16 @@ const StatCard = ({
           {title}
         </p>
         <div className="flex items-baseline gap-2">
-          <span className={cn("font-bold tracking-tight font-mono", valueSizeClasses[size], valueColor)}>
-            {value}
-          </span>
+          {isNumeric ? (
+            <AnimatedNumber 
+              value={value} 
+              className={cn("font-bold tracking-tight font-mono", valueSizeClasses[size], valueColor)} 
+            />
+          ) : (
+            <span className={cn("font-bold tracking-tight font-mono", valueSizeClasses[size], valueColor)}>
+              {value}
+            </span>
+          )}
           {unit && (
             <span className="text-muted-foreground text-lg">{unit}</span>
           )}
