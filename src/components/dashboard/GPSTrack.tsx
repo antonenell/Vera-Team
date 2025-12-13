@@ -135,9 +135,19 @@ const GPSTrack = ({ position, className }: GPSTrackProps) => {
       el.className = "flag-marker";
       el.style.cssText = `
         cursor: pointer;
-        filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        background: rgba(30, 30, 40, 0.6);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
       `;
-      el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="${getFlagColorHex(flag.color)}" stroke="${getFlagColorHex(flag.color)}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
+      el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${getFlagColorHex(flag.color)}" stroke="${getFlagColorHex(flag.color)}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
       
       const marker = new mapboxgl.Marker({ element: el })
         .setLngLat(flag.coords)
