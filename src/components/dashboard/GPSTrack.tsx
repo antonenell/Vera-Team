@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
+import { useTrackFlags, tracks, TrackName, FlagColor } from "@/hooks/useTrackFlags";
 
 const MAPBOX_TOKEN = "pk.eyJ1IjoiY2FybGJlcmdlIiwiYSI6ImNsMnh3OXZrYTBsNzUzaWp6NzlvdDM4bzgifQ.YiaCxeUA5RaJn7071yd42A";
 
@@ -18,40 +19,6 @@ interface GPSTrackProps {
   className?: string;
   isAdmin?: boolean;
 }
-
-type FlagColor = "grey" | "yellow" | "red" | "black";
-type TrackName = "stora-holm" | "silesia-ring";
-
-interface TurnFlag {
-  id: number;
-  coords: [number, number]; // [lng, lat]
-  color: FlagColor;
-}
-
-interface TrackConfig {
-  name: string;
-  bounds: [[number, number], [number, number]]; // [[sw_lng, sw_lat], [ne_lng, ne_lat]]
-  defaultFlags: Omit<TurnFlag, "color">[];
-}
-
-
-const tracks: Record<TrackName, TrackConfig> = {
-  "stora-holm": {
-    name: "Stora Holm",
-    bounds: [[11.9127, 57.7745], [11.9228, 57.7779]],
-    defaultFlags: [
-      { id: 1, coords: [11.9141, 57.7771] }, // 57°46'37.5"N 11°54'50.8"E
-      { id: 2, coords: [11.9220, 57.7765] }, // 57°46'35.4"N 11°55'19.3"E
-      { id: 3, coords: [11.9196, 57.7751] }, // 57°46'30.5"N 11°55'10.6"E
-      { id: 4, coords: [11.9165, 57.7760] }, // 57°46'33.7"N 11°54'59.4"E
-    ],
-  },
-  "silesia-ring": {
-    name: "Silesia Ring",
-    bounds: [[18.0844, 50.5241], [18.1044, 50.5341]],
-    defaultFlags: [],
-  },
-};
 
 const flagColors: Record<FlagColor, string> = {
   grey: "hsl(var(--muted-foreground))",
@@ -74,12 +41,8 @@ const GPSTrack = ({ position, className, isAdmin = false }: GPSTrackProps) => {
   const map = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   
-  const [flags, setFlags] = useState<Record<TrackName, TurnFlag[]>>({
-    "stora-holm": tracks["stora-holm"].defaultFlags.map(f => ({ ...f, color: "grey" as FlagColor })),
-    "silesia-ring": tracks["silesia-ring"].defaultFlags.map(f => ({ ...f, color: "grey" as FlagColor })),
-  });
-
-  const currentFlags = flags[selectedTrack];
+  // Use the real-time synced flags hook
+  const { getFlagColor, updateFlagColor, resetFlags } = useTrackFlags(isAdmin, selectedTrack);
 
   // Initialize map
   useEffect(() => {
@@ -130,8 +93,12 @@ const GPSTrack = ({ position, className, isAdmin = false }: GPSTrackProps) => {
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
 
+    const currentFlags = track.defaultFlags;
+
     // Add new markers for current track
     currentFlags.forEach((flag) => {
+      const color = getFlagColor(flag.id);
+      
       const el = document.createElement("div");
       el.className = "flag-marker";
       el.style.cssText = `
@@ -148,7 +115,7 @@ const GPSTrack = ({ position, className, isAdmin = false }: GPSTrackProps) => {
         border-radius: 12px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
       `;
-      el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${getFlagColorHex(flag.color)}" stroke="${getFlagColorHex(flag.color)}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
+      el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${getFlagColorHex(color)}" stroke="${getFlagColorHex(color)}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
       
       const marker = new mapboxgl.Marker({ element: el })
         .setLngLat(flag.coords)
@@ -170,14 +137,14 @@ const GPSTrack = ({ position, className, isAdmin = false }: GPSTrackProps) => {
         { color: "black", label: "Disqualified" },
       ];
       
-      colors.forEach(({ color, label }) => {
+      colors.forEach(({ color: colorOption, label }) => {
         const btn = document.createElement("button");
         btn.style.cssText = `
           display: flex;
           align-items: center;
           gap: 8px;
           padding: 6px 12px;
-          background: ${flag.color === color ? 'hsl(217.2 32.6% 17.5%)' : 'transparent'};
+          background: ${color === colorOption ? 'hsl(217.2 32.6% 17.5%)' : 'transparent'};
           border: none;
           border-radius: 4px;
           color: hsl(210 40% 98%);
@@ -186,18 +153,18 @@ const GPSTrack = ({ position, className, isAdmin = false }: GPSTrackProps) => {
           transition: background 0.2s;
         `;
         btn.innerHTML = `
-          <span style="width: 12px; height: 12px; border-radius: 50%; background: ${getFlagColorHex(color)}; border: 1px solid rgba(255,255,255,0.2);"></span>
+          <span style="width: 12px; height: 12px; border-radius: 50%; background: ${getFlagColorHex(colorOption)}; border: 1px solid rgba(255,255,255,0.2);"></span>
           ${label}
         `;
         btn.addEventListener("mouseenter", () => {
           btn.style.background = "hsl(217.2 32.6% 17.5%)";
         });
         btn.addEventListener("mouseleave", () => {
-          btn.style.background = flag.color === color ? "hsl(217.2 32.6% 17.5%)" : "transparent";
+          btn.style.background = color === colorOption ? "hsl(217.2 32.6% 17.5%)" : "transparent";
         });
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
-          updateFlagColor(flag.id, color);
+          updateFlagColor(flag.id, colorOption);
           popup.remove();
         });
         popupContent.appendChild(btn);
@@ -220,7 +187,7 @@ const GPSTrack = ({ position, className, isAdmin = false }: GPSTrackProps) => {
       
       markersRef.current.push(marker);
     });
-  }, [currentFlags, selectedTrack, isAdmin]);
+  }, [selectedTrack, isAdmin, getFlagColor, updateFlagColor]);
 
   // Update map when track changes
   useEffect(() => {
@@ -231,22 +198,6 @@ const GPSTrack = ({ position, className, isAdmin = false }: GPSTrackProps) => {
       });
     }
   }, [selectedTrack, track.bounds]);
-
-  const updateFlagColor = (flagId: number, color: FlagColor) => {
-    setFlags(prev => ({
-      ...prev,
-      [selectedTrack]: prev[selectedTrack].map(flag => 
-        flag.id === flagId ? { ...flag, color } : flag
-      ),
-    }));
-  };
-
-  const resetFlags = () => {
-    setFlags(prev => ({
-      ...prev,
-      [selectedTrack]: prev[selectedTrack].map(flag => ({ ...flag, color: "grey" as FlagColor })),
-    }));
-  };
 
   const handleTrackChange = (trackName: TrackName) => {
     setSelectedTrack(trackName);

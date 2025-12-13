@@ -8,6 +8,7 @@ import LapTimes from "@/components/dashboard/LapTimes";
 import RaceTimer from "@/components/dashboard/RaceTimer";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import { useRaceState } from "@/hooks/useRaceState";
 import chalmersLogo from "@/assets/chalmersverateam.svg";
 
 const TOTAL_LAPS = 11;
@@ -18,36 +19,34 @@ const TARGET_LAP_TIME = TARGET_RACE_TIME / TOTAL_LAPS; // ~185.5 seconds per lap
 const Index = () => {
   const { user, isAdmin, signOut } = useAuth();
   
-  // Simulated telemetry data
+  // Real-time synced race state
+  const {
+    timeLeft,
+    isRunning,
+    currentLap,
+    lapTimes,
+    currentLapElapsed,
+    isLoading,
+    startStop,
+    recordLap,
+    reset,
+  } = useRaceState(isAdmin);
+  
+  // Simulated telemetry data (local only)
   const [rpm, setRpm] = useState(4500);
   const [speed, setSpeed] = useState(42);
   const [temperature, setTemperature] = useState(78);
   const [motorRunning, setMotorRunning] = useState(true);
   const [xLogOnline, setXLogOnline] = useState(true);
   const [driverDisplayOnline, setDriverDisplayOnline] = useState(true);
-  const [timeLeft, setTimeLeft] = useState(RACE_DURATION_SECONDS);
-  const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const [lapStartTime, setLapStartTime] = useState(RACE_DURATION_SECONDS);
-  const [currentLap, setCurrentLap] = useState(0);
-  const [lapTimes, setLapTimes] = useState<number[]>([]);
   const [carPosition, setCarPosition] = useState({ x: 50, y: 20 });
-  
-  // Current lap elapsed time
-  const currentLapElapsed = isTimerRunning && currentLap > 0 ? lapStartTime - timeLeft : 0;
 
   // Simulate live data updates
   useEffect(() => {
     const interval = setInterval(() => {
-      // Simulate RPM fluctuation
       setRpm(prev => Math.max(0, Math.min(8000, prev + (Math.random() - 0.5) * 500)));
-      
-      // Simulate speed changes
       setSpeed(prev => Math.max(0, Math.min(80, prev + (Math.random() - 0.5) * 5)));
-      
-      // Simulate temperature
       setTemperature(prev => Math.max(60, Math.min(95, prev + (Math.random() - 0.5) * 2)));
-      
-      // Simulate car movement on track
       setCarPosition(prev => {
         const angle = Math.atan2(prev.y - 50, prev.x - 50) + 0.05;
         const radiusX = 40;
@@ -61,43 +60,6 @@ const Index = () => {
 
     return () => clearInterval(interval);
   }, []);
-
-  // Countdown timer - only runs when isTimerRunning is true
-  useEffect(() => {
-    if (!isTimerRunning) return;
-    
-    const timer = setInterval(() => {
-      setTimeLeft(prev => Math.max(0, prev - 1));
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [isTimerRunning]);
-
-  const handleStartStop = () => {
-    if (!isAdmin) return;
-    if (!isTimerRunning) {
-      // Starting the timer
-      setLapStartTime(timeLeft);
-    }
-    setIsTimerRunning(prev => !prev);
-  };
-
-  const handleLap = () => {
-    if (!isAdmin) return;
-    const lapTime = lapStartTime - timeLeft;
-    setLapTimes(prev => [...prev, lapTime]);
-    setCurrentLap(prev => prev + 1);
-    setLapStartTime(timeLeft);
-  };
-
-  const handleReset = () => {
-    if (!isAdmin) return;
-    setTimeLeft(RACE_DURATION_SECONDS);
-    setLapStartTime(RACE_DURATION_SECONDS);
-    setCurrentLap(0);
-    setLapTimes([]);
-    setIsTimerRunning(false);
-  };
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-6 lg:p-8 relative overflow-hidden">
@@ -202,10 +164,10 @@ const Index = () => {
         <RaceTimer
           timeLeftSeconds={timeLeft}
           totalSeconds={RACE_DURATION_SECONDS}
-          isRunning={isTimerRunning}
-          onStartStop={handleStartStop}
-          onLap={handleLap}
-          onReset={handleReset}
+          isRunning={isRunning}
+          onStartStop={startStop}
+          onLap={recordLap}
+          onReset={reset}
           lapTimes={lapTimes}
           targetLapTime={TARGET_LAP_TIME}
           className="col-span-2 row-span-2"
@@ -215,7 +177,7 @@ const Index = () => {
         {/* Lap Times - Tall */}
         <LapTimes
           lapTimes={lapTimes}
-          currentLap={currentLap}
+          currentLap={currentLap + (isRunning ? 1 : 0)}
           totalLaps={TOTAL_LAPS}
           targetLapTime={TARGET_LAP_TIME}
           currentLapElapsed={currentLapElapsed}
