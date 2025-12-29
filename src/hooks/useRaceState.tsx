@@ -58,11 +58,15 @@ export const useRaceState = (isAdmin: boolean) => {
         });
 
         // Set display to current DB value
-        setDisplayElapsed(data.elapsed_seconds);
+        // For spectators: add 1 second to compensate for network delay
+        const displayValue = !isAdmin && data.is_running
+          ? data.elapsed_seconds + 1
+          : data.elapsed_seconds;
+        setDisplayElapsed(displayValue);
 
         // Set spectator base for interpolation
         if (!isAdmin) {
-          spectatorBaseElapsedRef.current = data.elapsed_seconds;
+          spectatorBaseElapsedRef.current = displayValue;
           spectatorBaseTimeRef.current = Date.now();
         }
 
@@ -106,11 +110,12 @@ export const useRaceState = (isAdmin: boolean) => {
               totalRaceTime: newData.total_race_time,
             });
 
-            // NON-ADMIN: Set base for interpolation
+            // NON-ADMIN: Set base for interpolation (add 1 second to compensate for network delay)
             if (!isAdmin) {
-              spectatorBaseElapsedRef.current = newData.elapsed_seconds;
+              const compensatedElapsed = newData.elapsed_seconds + 1;
+              spectatorBaseElapsedRef.current = compensatedElapsed;
               spectatorBaseTimeRef.current = Date.now();
-              setDisplayElapsed(newData.elapsed_seconds);
+              setDisplayElapsed(compensatedElapsed);
             }
 
             // ADMIN: Update start time ref when race starts
