@@ -206,3 +206,15 @@ body {
   pointer-events: none;
 }
 }
+
+/* Reduce blur effects on mobile Safari for better performance */
+@supports (-webkit-touch-callout: none) {
+  .glass-card {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  .glass-card::before {
+    display: none;
+  }
+}
