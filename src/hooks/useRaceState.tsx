@@ -149,9 +149,9 @@ export const useRaceState = (isAdmin: boolean) => {
     };
   }, [isAdmin, raceState.isRunning, raceState.startTime]);
 
-  // Non-admin: Local tick for smooth display between database updates
+  // Local tick for smooth display (both admin and non-admin need this)
   useEffect(() => {
-    if (isAdmin || !raceState.isRunning) {
+    if (!raceState.isRunning) {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -159,6 +159,7 @@ export const useRaceState = (isAdmin: boolean) => {
       return;
     }
 
+    // Force re-render every second for smooth countdown display
     timerRef.current = setInterval(() => {
       setTick((t) => t + 1);
     }, 1000);
@@ -169,7 +170,7 @@ export const useRaceState = (isAdmin: boolean) => {
         timerRef.current = null;
       }
     };
-  }, [isAdmin, raceState.isRunning]);
+  }, [raceState.isRunning]);
 
   // Admin actions
   const startStop = useCallback(async () => {
