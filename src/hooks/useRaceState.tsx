@@ -30,6 +30,10 @@ export const useRaceState = (isAdmin: boolean) => {
   const startTimeRef = useRef<number | null>(null);
   const baseElapsedRef = useRef<number>(0);
 
+  // For spectator interpolation
+  const spectatorBaseElapsedRef = useRef<number>(0);
+  const spectatorBaseTimeRef = useRef<number>(Date.now());
+
   // Fetch initial state
   useEffect(() => {
     const fetchState = async () => {
@@ -55,6 +59,12 @@ export const useRaceState = (isAdmin: boolean) => {
 
         // Set display to current DB value
         setDisplayElapsed(data.elapsed_seconds);
+
+        // Set spectator base for interpolation
+        if (!isAdmin) {
+          spectatorBaseElapsedRef.current = data.elapsed_seconds;
+          spectatorBaseTimeRef.current = Date.now();
+        }
 
         // Only admin needs to track start time for local calculation
         if (isAdmin && data.is_running && data.start_time) {
@@ -96,8 +106,10 @@ export const useRaceState = (isAdmin: boolean) => {
               totalRaceTime: newData.total_race_time,
             });
 
-            // NON-ADMIN: Always use the server value directly
+            // NON-ADMIN: Set base for interpolation
             if (!isAdmin) {
+              spectatorBaseElapsedRef.current = newData.elapsed_seconds;
+              spectatorBaseTimeRef.current = Date.now();
               setDisplayElapsed(newData.elapsed_seconds);
             }
 
@@ -117,6 +129,29 @@ export const useRaceState = (isAdmin: boolean) => {
       supabase.removeChannel(channel);
     };
   }, [isAdmin]);
+
+  // SPECTATOR ONLY: Local interpolation timer between server updates
+  useEffect(() => {
+    if (isAdmin) return;
+    if (!raceState.isRunning) {
+      return;
+    }
+
+    // Interpolate locally between server updates
+    const interpolate = () => {
+      const now = Date.now();
+      const timeSinceUpdate = Math.floor((now - spectatorBaseTimeRef.current) / 1000);
+      const interpolatedElapsed = spectatorBaseElapsedRef.current + timeSinceUpdate;
+      setDisplayElapsed(interpolatedElapsed);
+    };
+
+    // Update display every second
+    const intervalId = setInterval(interpolate, 1000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [isAdmin, raceState.isRunning]);
 
   // ADMIN ONLY: Timer for display updates and database broadcasts
   useEffect(() => {
