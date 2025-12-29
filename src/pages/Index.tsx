@@ -1,6 +1,5 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Gauge, Thermometer, Activity, User, LogOut, LogIn, Map } from "lucide-react";
+import { Gauge, Thermometer, Activity, User, LogOut, LogIn } from "lucide-react";
 import StatCard from "@/components/dashboard/StatCard";
 import GPSTrack from "@/components/dashboard/GPSTrack";
 import SystemStatus from "@/components/dashboard/SystemStatus";
@@ -18,9 +17,6 @@ const TARGET_LAP_TIME = TARGET_RACE_TIME / TOTAL_LAPS; // ~185.5 seconds per lap
 
 const Index = () => {
   const { user, isAdmin, signOut } = useAuth();
-
-  // Map loads on demand to improve Safari performance
-  const [showMap, setShowMap] = useState(false);
 
   // Real-time synced race state
   const {
@@ -98,23 +94,12 @@ const Index = () => {
 
       {/* Main Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 auto-rows-fr">
-        {/* GPS Track - Large (loads on demand for Safari performance) */}
-        {showMap ? (
-          <GPSTrack
-            position={carPosition}
-            className="col-span-2 md:col-span-3 row-span-2"
-            isAdmin={isAdmin}
-          />
-        ) : (
-          <div
-            className="glass-card relative rounded-2xl p-6 col-span-2 md:col-span-3 row-span-2 flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 transition-colors"
-            onClick={() => setShowMap(true)}
-          >
-            <Map className="w-16 h-16 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground text-lg font-medium">Tap to load map</p>
-            <p className="text-muted-foreground/60 text-sm mt-1">Track flags & GPS position</p>
-          </div>
-        )}
+        {/* GPS Track - Large */}
+        <GPSTrack
+          position={carPosition}
+          className="col-span-2 md:col-span-3 row-span-2"
+          isAdmin={isAdmin}
+        />
 
         {/* Speed */}
         <StatCard
