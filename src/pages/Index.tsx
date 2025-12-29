@@ -1,11 +1,8 @@
 import { Link } from "react-router-dom";
-import { lazy, Suspense } from "react";
-import { Gauge, Thermometer, Activity, User, LogOut, LogIn, MapPin } from "lucide-react";
+import { Gauge, Thermometer, Activity, User, LogOut, LogIn } from "lucide-react";
 import StatCard from "@/components/dashboard/StatCard";
+import GPSTrack from "@/components/dashboard/GPSTrack";
 import SystemStatus from "@/components/dashboard/SystemStatus";
-
-// Lazy load the map component (it's heavy due to Mapbox)
-const GPSTrack = lazy(() => import("@/components/dashboard/GPSTrack"));
 import LapTimes from "@/components/dashboard/LapTimes";
 import RaceTimer from "@/components/dashboard/RaceTimer";
 import { Button } from "@/components/ui/button";
@@ -97,19 +94,12 @@ const Index = () => {
 
       {/* Main Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 auto-rows-fr">
-        {/* GPS Track - Large (lazy loaded) */}
-        <Suspense fallback={
-          <div className="glass-card relative rounded-2xl p-6 col-span-2 md:col-span-3 row-span-2 flex flex-col items-center justify-center">
-            <MapPin className="w-12 h-12 text-muted-foreground mb-4 animate-pulse" />
-            <p className="text-muted-foreground text-sm">Loading map...</p>
-          </div>
-        }>
-          <GPSTrack
-            position={carPosition}
-            className="col-span-2 md:col-span-3 row-span-2"
-            isAdmin={isAdmin}
-          />
-        </Suspense>
+        {/* GPS Track - Large */}
+        <GPSTrack
+          position={carPosition}
+          className="col-span-2 md:col-span-3 row-span-2"
+          isAdmin={isAdmin}
+        />
 
         {/* Speed */}
         <StatCard
