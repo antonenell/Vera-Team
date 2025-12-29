@@ -13,11 +13,6 @@ interface RaceState {
   totalRaceTime: number;
 }
 
-// Get synchronized server time (adjusts for device clock offset)
-const getServerTime = (serverTimeOffset: number) => {
-  return Date.now() + serverTimeOffset;
-};
-
 export const useRaceState = (isAdmin: boolean) => {
   const [raceState, setRaceState] = useState<RaceState>({
     isRunning: false,
@@ -28,25 +23,15 @@ export const useRaceState = (isAdmin: boolean) => {
     totalRaceTime: TOTAL_RACE_TIME,
   });
   const [isLoading, setIsLoading] = useState(true);
-  const [tick, setTick] = useState(0); // Forces re-render every second
+  const [lastUpdateTime, setLastUpdateTime] = useState<number>(Date.now());
+  const [tick, setTick] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const serverTimeOffset = useRef<number>(0); // Offset between device clock and server clock
+  const broadcastRef = useRef<NodeJS.Timeout | null>(null);
+  const initialElapsedRef = useRef<number>(0); // Store elapsed at start time
 
-  // Fetch initial state and sync server time
+  // Fetch initial state
   useEffect(() => {
     const fetchState = async () => {
-      // Get server time to calculate clock offset
-      const beforeRequest = Date.now();
-      const { data: timeData } = await supabase.rpc("get_server_time");
-      const afterRequest = Date.now();
-
-      if (timeData) {
-        // Estimate server time accounting for network latency (use midpoint)
-        const networkLatency = (afterRequest - beforeRequest) / 2;
-        const serverTime = new Date(timeData).getTime();
-        serverTimeOffset.current = serverTime - (beforeRequest + networkLatency);
-      }
-
       const { data, error } = await supabase
         .from("race_state")
         .select("*")
@@ -67,6 +52,9 @@ export const useRaceState = (isAdmin: boolean) => {
           totalRaceTime: data.total_race_time,
         });
 
+        if (data.is_running) {
+          initialElapsedRef.current = data.elapsed_seconds;
+        }
       }
       setIsLoading(false);
     };
@@ -87,13 +75,12 @@ export const useRaceState = (isAdmin: boolean) => {
           filter: `id=eq.${RACE_STATE_ID}`,
         },
         (payload) => {
-          console.log("Race state updated:", payload);
           const newData = payload.new as any;
           if (newData) {
-            const lapTimesArray = Array.isArray(newData.lap_times) 
-              ? newData.lap_times 
+            const lapTimesArray = Array.isArray(newData.lap_times)
+              ? newData.lap_times
               : [];
-            
+
             setRaceState({
               isRunning: newData.is_running,
               startTime: newData.start_time,
@@ -102,7 +89,14 @@ export const useRaceState = (isAdmin: boolean) => {
               lapTimes: lapTimesArray,
               totalRaceTime: newData.total_race_time,
             });
-            
+
+            // Track when we received an update (for fallback detection)
+            setLastUpdateTime(Date.now());
+
+            // Store initial elapsed when race starts
+            if (newData.is_running && newData.start_time) {
+              initialElapsedRef.current = newData.elapsed_seconds;
+            }
           }
         }
       )
@@ -113,72 +107,98 @@ export const useRaceState = (isAdmin: boolean) => {
     };
   }, []);
 
-  // Local timer for smooth countdown when running
+  // Admin: Broadcast elapsed seconds to database every second while running
   useEffect(() => {
-    if (raceState.isRunning) {
-      timerRef.current = setInterval(() => {
-        setTick(t => t + 1); // Force re-render every second
-      }, 1000);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
+    if (!isAdmin || !raceState.isRunning || !raceState.startTime) {
+      if (broadcastRef.current) {
+        clearInterval(broadcastRef.current);
+        broadcastRef.current = null;
+      }
+      return;
     }
+
+    const startTime = new Date(raceState.startTime).getTime();
+    const baseElapsed = initialElapsedRef.current;
+
+    // Broadcast immediately, then every second
+    const broadcast = async () => {
+      const now = Date.now();
+      const elapsed = Math.floor((now - startTime) / 1000) + baseElapsed;
+
+      await supabase
+        .from("race_state")
+        .update({
+          elapsed_seconds: elapsed,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", RACE_STATE_ID);
+    };
+
+    broadcast(); // Initial broadcast
+    broadcastRef.current = setInterval(broadcast, 1000);
+
+    return () => {
+      if (broadcastRef.current) {
+        clearInterval(broadcastRef.current);
+        broadcastRef.current = null;
+      }
+    };
+  }, [isAdmin, raceState.isRunning, raceState.startTime]);
+
+  // Non-admin: Local tick for smooth display between database updates
+  useEffect(() => {
+    if (isAdmin || !raceState.isRunning) {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
+
+    timerRef.current = setInterval(() => {
+      setTick((t) => t + 1);
+    }, 1000);
 
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
+        timerRef.current = null;
       }
     };
-  }, [raceState.isRunning]);
+  }, [isAdmin, raceState.isRunning]);
 
   // Admin actions
   const startStop = useCallback(async () => {
     if (!isAdmin) return;
 
     const newIsRunning = !raceState.isRunning;
-    const now = new Date().toISOString();
 
     if (newIsRunning) {
-      // Starting - set start time
-      await supabase
-        .from("race_state")
-        .update({
-          is_running: true,
-          start_time: now,
-          updated_at: now,
-        })
-        .eq("id", RACE_STATE_ID);
+      // Starting - use server function to set start_time with server's NOW()
+      await supabase.rpc("start_race");
     } else {
-      // Stopping - calculate elapsed and clear start time using synced time
-      const syncedNow = getServerTime(serverTimeOffset.current);
-      const elapsed = raceState.startTime
-        ? Math.floor((syncedNow - new Date(raceState.startTime).getTime()) / 1000)
-        : 0;
-
+      // Stopping - elapsed_seconds is already being updated by broadcast
+      // Just stop the race and clear start_time
+      const now = new Date().toISOString();
       await supabase
         .from("race_state")
         .update({
           is_running: false,
-          elapsed_seconds: raceState.elapsedSeconds + elapsed,
           start_time: null,
           updated_at: now,
         })
         .eq("id", RACE_STATE_ID);
     }
-  }, [isAdmin, raceState.isRunning, raceState.elapsedSeconds, raceState.startTime]);
+  }, [isAdmin, raceState.isRunning]);
 
   const recordLap = useCallback(async () => {
     if (!isAdmin || !raceState.isRunning) return;
 
-    // Calculate current lap time using synced time
-    const syncedNow = getServerTime(serverTimeOffset.current);
-    const totalElapsed = raceState.startTime
-      ? Math.floor((syncedNow - new Date(raceState.startTime).getTime()) / 1000) + raceState.elapsedSeconds
-      : raceState.elapsedSeconds;
-    
+    // Use the current elapsed_seconds from state (which is being broadcast)
+    const totalElapsed = raceState.elapsedSeconds;
     const previousLapsTotal = raceState.lapTimes.reduce((a, b) => a + b, 0);
     const currentLapTime = totalElapsed - previousLapsTotal;
-    
+
     const newLapTimes = [...raceState.lapTimes, currentLapTime];
     const now = new Date().toISOString();
 
@@ -189,7 +209,7 @@ export const useRaceState = (isAdmin: boolean) => {
         updated_at: now,
       })
       .eq("id", RACE_STATE_ID);
-  }, [isAdmin, raceState.isRunning, raceState.lapTimes, raceState.elapsedSeconds, raceState.startTime]);
+  }, [isAdmin, raceState.isRunning, raceState.lapTimes, raceState.elapsedSeconds]);
 
   const reset = useCallback(async () => {
     if (!isAdmin) return;
@@ -205,15 +225,36 @@ export const useRaceState = (isAdmin: boolean) => {
         updated_at: now,
       })
       .eq("id", RACE_STATE_ID);
+
+    initialElapsedRef.current = 0;
   }, [isAdmin]);
 
-  // Calculate time left based on total race time and elapsed
-  // Use synchronized server time for consistency across all clients
-  const syncedNow = getServerTime(serverTimeOffset.current);
-  const totalElapsed = raceState.isRunning && raceState.startTime
-    ? Math.floor((syncedNow - new Date(raceState.startTime).getTime()) / 1000) + raceState.elapsedSeconds
-    : raceState.elapsedSeconds;
+  // Calculate elapsed seconds for display
+  const getDisplayElapsed = (): number => {
+    if (!raceState.isRunning) {
+      return raceState.elapsedSeconds;
+    }
 
+    if (isAdmin && raceState.startTime) {
+      // Admin calculates locally (is the source of truth)
+      const now = Date.now();
+      const startTime = new Date(raceState.startTime).getTime();
+      return Math.floor((now - startTime) / 1000) + initialElapsedRef.current;
+    }
+
+    // Non-admin: use DB value, but interpolate for smoothness
+    const timeSinceUpdate = (Date.now() - lastUpdateTime) / 1000;
+
+    if (timeSinceUpdate > 3) {
+      // Fallback: admin might be disconnected, estimate locally
+      return raceState.elapsedSeconds + Math.floor(timeSinceUpdate);
+    }
+
+    // Use the value from database directly
+    return raceState.elapsedSeconds;
+  };
+
+  const totalElapsed = getDisplayElapsed();
   const timeLeft = Math.max(0, raceState.totalRaceTime - totalElapsed);
 
   // Calculate current lap elapsed time
