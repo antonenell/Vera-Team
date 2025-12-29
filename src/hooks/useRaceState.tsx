@@ -23,6 +23,7 @@ export const useRaceState = (isAdmin: boolean) => {
     totalRaceTime: TOTAL_RACE_TIME,
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [tick, setTick] = useState(0); // Forces re-render every second
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const serverStartTime = useRef<Date | null>(null);
 
@@ -105,16 +106,9 @@ export const useRaceState = (isAdmin: boolean) => {
 
   // Local timer for smooth countdown when running
   useEffect(() => {
-    if (raceState.isRunning && serverStartTime.current) {
+    if (raceState.isRunning) {
       timerRef.current = setInterval(() => {
-        const now = new Date();
-        const elapsed = Math.floor((now.getTime() - serverStartTime.current!.getTime()) / 1000);
-        setRaceState(prev => ({
-          ...prev,
-          elapsedSeconds: prev.elapsedSeconds + elapsed > prev.totalRaceTime 
-            ? prev.totalRaceTime 
-            : Math.max(prev.elapsedSeconds, elapsed),
-        }));
+        setTick(t => t + 1); // Force re-render every second
       }, 1000);
     } else if (timerRef.current) {
       clearInterval(timerRef.current);
