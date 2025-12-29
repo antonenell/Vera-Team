@@ -24,6 +24,7 @@ export const useRaceState = (isAdmin: boolean) => {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdateTime, setLastUpdateTime] = useState<number>(Date.now());
+  const [lastElapsedFromServer, setLastElapsedFromServer] = useState<number>(0);
   const [tick, setTick] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const broadcastRef = useRef<NodeJS.Timeout | null>(null);
@@ -54,6 +55,8 @@ export const useRaceState = (isAdmin: boolean) => {
 
         if (data.is_running) {
           initialElapsedRef.current = data.elapsed_seconds;
+          setLastElapsedFromServer(data.elapsed_seconds);
+          setLastUpdateTime(Date.now());
         }
       }
       setIsLoading(false);
@@ -90,8 +93,9 @@ export const useRaceState = (isAdmin: boolean) => {
               totalRaceTime: newData.total_race_time,
             });
 
-            // Track when we received an update (for fallback detection)
+            // Track when we received an update and what value (for interpolation)
             setLastUpdateTime(Date.now());
+            setLastElapsedFromServer(newData.elapsed_seconds);
 
             // Store initial elapsed when race starts
             if (newData.is_running && newData.start_time) {
@@ -242,16 +246,12 @@ export const useRaceState = (isAdmin: boolean) => {
       return Math.floor((now - startTime) / 1000) + initialElapsedRef.current;
     }
 
-    // Non-admin: use DB value, but interpolate for smoothness
-    const timeSinceUpdate = (Date.now() - lastUpdateTime) / 1000;
+    // Non-admin: interpolate from last server value for smooth counting
+    const timeSinceUpdate = Math.floor((Date.now() - lastUpdateTime) / 1000);
 
-    if (timeSinceUpdate > 3) {
-      // Fallback: admin might be disconnected, estimate locally
-      return raceState.elapsedSeconds + Math.floor(timeSinceUpdate);
-    }
-
-    // Use the value from database directly
-    return raceState.elapsedSeconds;
+    // Add seconds since last update to the last known server value
+    // This creates smooth 1-second counting between server updates
+    return lastElapsedFromServer + timeSinceUpdate;
   };
 
   const totalElapsed = getDisplayElapsed();
