@@ -1,6 +1,5 @@
-import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { Gauge, Thermometer, Activity, User, LogOut, LogIn, MapPin } from "lucide-react";
+import { Gauge, Thermometer, Activity, User, LogOut, LogIn } from "lucide-react";
 import StatCard from "@/components/dashboard/StatCard";
 import GPSTrack from "@/components/dashboard/GPSTrack";
 import SystemStatus from "@/components/dashboard/SystemStatus";
@@ -18,13 +17,6 @@ const TARGET_LAP_TIME = TARGET_RACE_TIME / TOTAL_LAPS; // ~185.5 seconds per lap
 
 const Index = () => {
   const { user, isAdmin, signOut } = useAuth();
-
-  // Defer map loading to prevent blocking main thread on mobile
-  const [showMap, setShowMap] = useState(false);
-  useEffect(() => {
-    const timer = setTimeout(() => setShowMap(true), 100);
-    return () => clearTimeout(timer);
-  }, []);
 
   // Real-time synced race state
   const {
@@ -102,19 +94,12 @@ const Index = () => {
 
       {/* Main Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 auto-rows-fr">
-        {/* GPS Track - Large (deferred to improve mobile load time) */}
-        {showMap ? (
-          <GPSTrack
-            position={carPosition}
-            className="col-span-2 md:col-span-3 row-span-2"
-            isAdmin={isAdmin}
-          />
-        ) : (
-          <div className="glass-card relative rounded-2xl p-6 col-span-2 md:col-span-3 row-span-2 flex flex-col items-center justify-center">
-            <MapPin className="w-12 h-12 text-muted-foreground mb-4 animate-pulse" />
-            <p className="text-muted-foreground text-sm">Loading map...</p>
-          </div>
-        )}
+        {/* GPS Track - Large */}
+        <GPSTrack
+          position={carPosition}
+          className="col-span-2 md:col-span-3 row-span-2"
+          isAdmin={isAdmin}
+        />
 
         {/* Speed */}
         <StatCard
