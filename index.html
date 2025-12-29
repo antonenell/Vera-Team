@@ -19,7 +19,15 @@
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Initial loading state shown before React mounts -->
+      <div id="initial-loader" style="display: flex; align-items: center; justify-content: center; height: 100vh; background: #0a0a0b; color: #888; font-family: system-ui, sans-serif;">
+        <div style="text-align: center;">
+          <div style="font-size: 24px; margin-bottom: 8px;">Loading...</div>
+          <div style="font-size: 14px;">Vera Team Dashboard</div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
