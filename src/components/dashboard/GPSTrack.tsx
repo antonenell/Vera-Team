@@ -15,9 +15,10 @@ import { useTrackFlags, tracks, TrackName, FlagColor } from "@/hooks/useTrackFla
 const MAPBOX_TOKEN = "pk.eyJ1IjoiY2FybGJlcmdlIiwiYSI6ImNsMnh3OXZrYTBsNzUzaWp6NzlvdDM4bzgifQ.YiaCxeUA5RaJn7071yd42A";
 
 interface GPSTrackProps {
-  position: { x: number; y: number };
+  position: { lat: number; lng: number };
   className?: string;
   isAdmin?: boolean;
+  isCarOnline?: boolean;
 }
 
 const flagColors: Record<FlagColor, string> = {
@@ -34,12 +35,13 @@ const flagLabels: Record<FlagColor, string> = {
   black: "Disqualified",
 };
 
-const GPSTrack = ({ position, className, isAdmin = false }: GPSTrackProps) => {
+const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }: GPSTrackProps) => {
   const [selectedTrack, setSelectedTrack] = useState<TrackName>("stora-holm");
   const track = tracks[selectedTrack];
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const carMarkerRef = useRef<mapboxgl.Marker | null>(null);
   
   // Use the real-time synced flags hook
   const { getFlagColor, updateFlagColor, resetFlags } = useTrackFlags(isAdmin, selectedTrack);
@@ -66,14 +68,51 @@ const GPSTrack = ({ position, className, isAdmin = false }: GPSTrackProps) => {
     
     resizeObserver.observe(mapContainer.current);
 
+    // Create car marker
+    const carEl = document.createElement("div");
+    carEl.className = "car-marker";
+    carEl.style.cssText = `
+      width: 16px;
+      height: 16px;
+      background: hsl(142, 71%, 45%);
+      border-radius: 50%;
+      border: 2px solid white;
+      box-shadow: 0 0 12px hsl(142, 71%, 45%);
+      animation: pulse 2s infinite;
+    `;
+
+    carMarkerRef.current = new mapboxgl.Marker({ element: carEl })
+      .setLngLat([track.bounds[0][0], track.bounds[0][1]]) // Start at corner
+      .addTo(map.current);
+
     return () => {
       resizeObserver.disconnect();
       markersRef.current.forEach(m => m.remove());
       markersRef.current = [];
+      carMarkerRef.current?.remove();
+      carMarkerRef.current = null;
       map.current?.remove();
       map.current = null;
     };
   }, []);
+
+  // Update car marker position when GPS data changes
+  useEffect(() => {
+    if (!carMarkerRef.current || !map.current) return;
+
+    // Only update if we have valid coordinates
+    if (position.lat !== 0 && position.lng !== 0) {
+      carMarkerRef.current.setLngLat([position.lng, position.lat]);
+
+      // Update marker visibility based on online status
+      const el = carMarkerRef.current.getElement();
+      if (el) {
+        el.style.opacity = isCarOnline ? "1" : "0.3";
+        el.style.background = isCarOnline ? "hsl(142, 71%, 45%)" : "hsl(0, 0%, 50%)";
+        el.style.boxShadow = isCarOnline ? "0 0 12px hsl(142, 71%, 45%)" : "none";
+      }
+    }
+  }, [position, isCarOnline]);
 
   // Create flag color helper
   const getFlagColorHex = (color: FlagColor): string => {
@@ -260,17 +299,6 @@ const GPSTrack = ({ position, className, isAdmin = false }: GPSTrackProps) => {
         `}</style>
         {/* Mapbox Map */}
         <div ref={mapContainer} className="absolute inset-0 [&_.mapboxgl-ctrl-logo]:hidden" />
-        
-        {/* Car position overlay - will be replaced with actual GPS marker later */}
-        <div 
-          className="absolute w-3 h-3 rounded-full bg-racing-green animate-pulse z-10 pointer-events-none"
-          style={{ 
-            left: `${position.x}%`, 
-            top: `${position.y}%`,
-            transform: 'translate(-50%, -50%)',
-            boxShadow: '0 0 12px hsl(var(--racing-green))'
-          }}
-        />
       </div>
       {/* Flag legend with frosted glass effect */}
       <div className="mt-3 p-3 rounded-xl bg-background/30 backdrop-blur-md border border-border/30 shadow-lg">
@@ -290,8 +318,14 @@ const GPSTrack = ({ position, className, isAdmin = false }: GPSTrackProps) => {
         </div>
       </div>
       <div className="flex justify-between text-xs text-muted-foreground mt-2">
-        <span>Lat: {(50.123 + position.x * 0.001).toFixed(4)}°</span>
-        <span>Lon: {(8.234 + position.y * 0.001).toFixed(4)}°</span>
+        <span>Lat: {position.lat !== 0 ? position.lat.toFixed(5) : "--"}°</span>
+        <span className={cn(
+          "px-1.5 py-0.5 rounded text-xs",
+          isCarOnline ? "bg-racing-green/20 text-racing-green" : "bg-muted text-muted-foreground"
+        )}>
+          {isCarOnline ? "LIVE" : "OFFLINE"}
+        </span>
+        <span>Lng: {position.lng !== 0 ? position.lng.toFixed(5) : "--"}°</span>
       </div>
     </div>
   );

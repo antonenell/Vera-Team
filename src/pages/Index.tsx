@@ -8,6 +8,7 @@ import RaceTimer from "@/components/dashboard/RaceTimer";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useRaceState } from "@/hooks/useRaceState";
+import { useGpsTelemetry } from "@/hooks/useGpsTelemetry";
 import chalmersLogo from "@/assets/chalmersverateam.svg";
 
 const TOTAL_LAPS = 11;
@@ -30,17 +31,22 @@ const Index = () => {
     recordLap,
     reset,
   } = useRaceState(isAdmin);
-  
-  // Telemetry data - defaults for when not connected
+
+  // GPS telemetry from driver's phone
+  const {
+    position: carPosition,
+    speed: gpsSpeed,
+    isOnline: driverDisplayOnline,
+    batteryLevel,
+    signalStrength,
+  } = useGpsTelemetry();
+
+  // Other telemetry data - defaults for when not connected
   const rpm = 0;
-  const speed = 0;
+  const speed = gpsSpeed; // Use GPS speed from phone
   const temperature = null; // null = not connected
   const motorRunning = false;
   const xLogOnline = false;
-  const driverDisplayOnline = false;
-  
-  // Static GPS position - will be connected to real data later
-  const carPosition = { x: 50, y: 50 };
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-6 lg:p-8 relative overflow-hidden">
@@ -99,6 +105,7 @@ const Index = () => {
           position={carPosition}
           className="col-span-2 md:col-span-3 row-span-2"
           isAdmin={isAdmin}
+          isCarOnline={driverDisplayOnline}
         />
 
         {/* Speed */}
