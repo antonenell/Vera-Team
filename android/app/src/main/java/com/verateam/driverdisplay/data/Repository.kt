@@ -82,19 +82,37 @@ class Repository {
         }
     }
 
-    // Set online status
+    // Set online status - clears GPS coordinates when going offline
     suspend fun setOnlineStatus(isOnline: Boolean) {
         try {
-            val update = OnlineStatusUpdate(
-                isOnline = isOnline,
-                updatedAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
-            )
-            supabase.from("gps_telemetry")
-                .update(update) {
-                    filter {
-                        eq("id", GPS_TELEMETRY_ID)
+            if (isOnline) {
+                val update = OnlineStatusUpdate(
+                    isOnline = true,
+                    updatedAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
+                )
+                supabase.from("gps_telemetry")
+                    .update(update) {
+                        filter {
+                            eq("id", GPS_TELEMETRY_ID)
+                        }
                     }
-                }
+            } else {
+                // Clear GPS coordinates when going offline
+                val update = OfflineUpdate(
+                    isOnline = false,
+                    latitude = 0.0,
+                    longitude = 0.0,
+                    speed = 0.0,
+                    heading = 0.0,
+                    updatedAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
+                )
+                supabase.from("gps_telemetry")
+                    .update(update) {
+                        filter {
+                            eq("id", GPS_TELEMETRY_ID)
+                        }
+                    }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error setting online status: ${e.message}")
         }

@@ -59,3 +59,14 @@ data class OnlineStatusUpdate(
     @SerialName("is_online") val isOnline: Boolean,
     @SerialName("updated_at") val updatedAt: String
 )
+
+// For clearing GPS when going offline
+@Serializable
+data class OfflineUpdate(
+    @SerialName("is_online") val isOnline: Boolean = false,
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val speed: Double = 0.0,
+    val heading: Double = 0.0,
+    @SerialName("updated_at") val updatedAt: String
+)
