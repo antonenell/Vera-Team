@@ -236,8 +236,18 @@ export const useRaceState = (isAdmin: boolean) => {
     const newIsRunning = !raceState.isRunning;
 
     if (newIsRunning) {
-      // Starting - use server function to set start_time with server's NOW()
-      await supabase.rpc("start_race");
+      // Starting - reset and start the race
+      const now = new Date().toISOString();
+      await supabase
+        .from("race_state")
+        .update({
+          is_running: true,
+          start_time: now,
+          elapsed_seconds: 0,
+          lap_times: [],
+          updated_at: now,
+        })
+        .eq("id", RACE_STATE_ID);
     } else {
       // Stopping
       const now = new Date().toISOString();
