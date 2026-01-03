@@ -23,6 +23,7 @@ import com.verateam.driverdisplay.data.Repository
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.runBlocking
 
 class LocationService : Service() {
 
@@ -71,8 +72,8 @@ class LocationService : Service() {
         super.onDestroy()
         stopLocationUpdates()
 
-        // Set offline status
-        serviceScope.launch {
+        // Set offline status - use runBlocking to ensure it completes before service dies
+        runBlocking {
             repository.setOnlineStatus(false)
         }
 
