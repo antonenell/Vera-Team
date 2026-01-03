@@ -100,17 +100,19 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
   useEffect(() => {
     if (!carMarkerRef.current || !map.current) return;
 
-    // Only update if we have valid coordinates
+    const el = carMarkerRef.current.getElement();
+    if (!el) return;
+
+    // Hide marker completely when offline
+    if (!isCarOnline) {
+      el.style.display = "none";
+      return;
+    }
+
+    // Show marker and update position when online
+    el.style.display = "block";
     if (position.lat !== 0 && position.lng !== 0) {
       carMarkerRef.current.setLngLat([position.lng, position.lat]);
-
-      // Update marker visibility based on online status
-      const el = carMarkerRef.current.getElement();
-      if (el) {
-        el.style.opacity = isCarOnline ? "1" : "0.3";
-        el.style.background = isCarOnline ? "hsl(142, 71%, 45%)" : "hsl(0, 0%, 50%)";
-        el.style.boxShadow = isCarOnline ? "0 0 12px hsl(142, 71%, 45%)" : "none";
-      }
     }
   }, [position, isCarOnline]);
 
