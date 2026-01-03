@@ -68,7 +68,7 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
     
     resizeObserver.observe(mapContainer.current);
 
-    // Create car marker
+    // Create car marker - hidden by default until online
     const carEl = document.createElement("div");
     carEl.className = "car-marker";
     carEl.style.cssText = `
@@ -79,6 +79,7 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
       border: 2px solid white;
       box-shadow: 0 0 12px hsl(142, 71%, 45%);
       animation: pulse 2s infinite;
+      display: none;
     `;
 
     carMarkerRef.current = new mapboxgl.Marker({ element: carEl })
