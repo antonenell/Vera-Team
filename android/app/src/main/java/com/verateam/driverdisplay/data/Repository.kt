@@ -2,6 +2,8 @@ package com.verateam.driverdisplay.data
 
 import android.util.Log
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.rpc
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 
@@ -14,6 +16,22 @@ class Repository {
         const val GPS_TELEMETRY_ID = "00000000-0000-0000-0000-000000000002"
     }
 
+    /**
+     * Fetch server time in milliseconds for clock synchronization.
+     * This allows the client to calculate the offset between local and server clocks.
+     */
+    suspend fun fetchServerTimeMs(): Long? {
+        return try {
+            val result = supabase.postgrest.rpc("get_server_time_ms")
+                .decodeAs<Long>()
+            Log.d(TAG, "Server time: $result ms")
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching server time: ${e.message}")
+            null
+        }
+    }
+
     // Simple fetch - no realtime, just get current state
     suspend fun fetchRaceState(): RaceState? {
         return try {
@@ -21,7 +39,7 @@ class Repository {
             val result = supabase.from("race_state")
                 .select()
                 .decodeSingleOrNull<RaceState>()
-            Log.d(TAG, "Got: isRunning=${result?.isRunning}, elapsed=${result?.elapsedSeconds}")
+            Log.d(TAG, "Got: isRunning=${result?.isRunning}, startedAtMs=${result?.startedAtMs}")
             result
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching race state: ${e.message}")

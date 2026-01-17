@@ -3,12 +3,20 @@ package com.verateam.driverdisplay.data
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/**
+ * Server-Authoritative Timer Model
+ *
+ * Uses timestamps instead of ticking counters to avoid clock drift.
+ * All clients calculate elapsed time from the same server timestamp.
+ */
 @Serializable
 data class RaceState(
     val id: String = "00000000-0000-0000-0000-000000000001",
     @SerialName("is_running") val isRunning: Boolean = false,
-    @SerialName("start_time") val startTime: String? = null,
-    @SerialName("elapsed_seconds") val elapsedSeconds: Int = 0,
+    @SerialName("started_at_ms") val startedAtMs: Long? = null,  // Server timestamp when race started
+    @SerialName("paused_offset_ms") val pausedOffsetMs: Long = 0,  // Accumulated pause time
+    @SerialName("start_time") val startTime: String? = null,  // Legacy field
+    @SerialName("elapsed_seconds") val elapsedSeconds: Int = 0,  // Legacy field
     @SerialName("lap_times") val lapTimes: List<Int> = emptyList(),
     @SerialName("current_lap") val currentLap: Int = 1,
     @SerialName("total_race_time") val totalRaceTime: Int = 2100,

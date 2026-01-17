@@ -2,39 +2,105 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 const RACE_STATE_ID = "00000000-0000-0000-0000-000000000001";
-const TOTAL_RACE_TIME = 35 * 60; // 35 minutes
+const TOTAL_RACE_TIME_MS = 35 * 60 * 1000; // 35 minutes in milliseconds
+
+/**
+ * Server-Authoritative Timer Implementation
+ *
+ * PRINCIPLE: "Send timestamps, not ticks. Calculate time, don't count it."
+ *
+ * How it works:
+ * 1. Server stores `started_at_ms` (server timestamp when race started)
+ * 2. On connect, client fetches server time and calculates `clockOffset`
+ * 3. Client calculates remaining time using:
+ *    elapsedMs = correctedNow - startedAtMs - pausedOffsetMs
+ *    where correctedNow = Date.now() + clockOffset
+ *
+ * Why this avoids drift:
+ * - All clients derive time from the SAME server timestamp
+ * - Clock offset compensates for local clock differences
+ * - No per-second server broadcasts (only state changes: start, stop, lap, reset)
+ * - Late joiners immediately see correct time
+ */
 
 interface RaceState {
   isRunning: boolean;
-  startTime: string | null;
-  elapsedSeconds: number;
+  startedAtMs: number | null;  // Server timestamp when race started (milliseconds)
+  pausedOffsetMs: number;      // Accumulated pause time (milliseconds)
   currentLap: number;
-  lapTimes: number[];
-  totalRaceTime: number;
+  lapTimes: number[];          // Lap times in seconds
+  totalRaceTimeMs: number;     // Total race duration in milliseconds
+}
+
+interface DbRaceState {
+  id: string;
+  is_running: boolean;
+  started_at_ms: number | null;
+  paused_offset_ms: number;
+  elapsed_seconds: number; // Legacy field, kept for backwards compatibility
+  start_time: string | null; // Legacy field
+  lap_times: number[];
+  total_race_time: number;
+  updated_at: string;
 }
 
 export const useRaceState = (isAdmin: boolean) => {
   const [raceState, setRaceState] = useState<RaceState>({
     isRunning: false,
-    startTime: null,
-    elapsedSeconds: 0,
+    startedAtMs: null,
+    pausedOffsetMs: 0,
     currentLap: 0,
     lapTimes: [],
-    totalRaceTime: TOTAL_RACE_TIME,
+    totalRaceTimeMs: TOTAL_RACE_TIME_MS,
   });
   const [isLoading, setIsLoading] = useState(true);
-  const [displayElapsed, setDisplayElapsed] = useState(0);
+  const [elapsedMs, setElapsedMs] = useState(0);
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const broadcastRef = useRef<NodeJS.Timeout | null>(null);
-  const startTimeRef = useRef<number | null>(null);
-  const baseElapsedRef = useRef<number>(0);
+  // Clock offset: serverTime - localTime
+  // To get server-corrected time: Date.now() + clockOffset
+  const clockOffsetRef = useRef<number>(0);
+  const animationFrameRef = useRef<number | null>(null);
 
-  // For spectator interpolation
-  const spectatorBaseElapsedRef = useRef<number>(0);
-  const spectatorBaseTimeRef = useRef<number>(Date.now());
+  /**
+   * Sync clock with server on initial load
+   * This establishes the offset between local clock and server clock
+   */
+  useEffect(() => {
+    const syncClock = async () => {
+      try {
+        const localBefore = Date.now();
 
-  // Fetch initial state
+        // Call server function to get server time in milliseconds
+        const { data, error } = await supabase.rpc("get_server_time_ms");
+
+        const localAfter = Date.now();
+
+        if (error) {
+          console.warn("Failed to sync clock with server:", error);
+          return;
+        }
+
+        // Estimate server time at the midpoint of our request
+        const roundTripTime = localAfter - localBefore;
+        const localMidpoint = localBefore + roundTripTime / 2;
+        const serverTimeMs = Number(data);
+
+        // clockOffset = serverTime - localTime
+        // To get corrected time: Date.now() + clockOffset
+        clockOffsetRef.current = serverTimeMs - localMidpoint;
+
+        console.log(`Clock synced: offset=${clockOffsetRef.current}ms, RTT=${roundTripTime}ms`);
+      } catch (err) {
+        console.warn("Clock sync error:", err);
+      }
+    };
+
+    syncClock();
+  }, []);
+
+  /**
+   * Fetch initial state from database
+   */
   useEffect(() => {
     const fetchState = async () => {
       const { data, error } = await supabase
@@ -44,45 +110,29 @@ export const useRaceState = (isAdmin: boolean) => {
         .single();
 
       if (data && !error) {
-        const lapTimesArray = Array.isArray(data.lap_times)
-          ? data.lap_times
-          : [];
+        const dbData = data as DbRaceState;
+        const lapTimesArray = Array.isArray(dbData.lap_times) ? dbData.lap_times : [];
 
         setRaceState({
-          isRunning: data.is_running,
-          startTime: data.start_time,
-          elapsedSeconds: data.elapsed_seconds,
+          isRunning: dbData.is_running,
+          startedAtMs: dbData.started_at_ms,
+          pausedOffsetMs: dbData.paused_offset_ms ?? 0,
           currentLap: lapTimesArray.length,
           lapTimes: lapTimesArray,
-          totalRaceTime: data.total_race_time,
+          totalRaceTimeMs: dbData.total_race_time * 1000,
         });
-
-        // Set display to current DB value
-        // For spectators: add 1 second to compensate for network delay
-        const displayValue = !isAdmin && data.is_running
-          ? data.elapsed_seconds + 1
-          : data.elapsed_seconds;
-        setDisplayElapsed(displayValue);
-
-        // Set spectator base for interpolation
-        if (!isAdmin) {
-          spectatorBaseElapsedRef.current = displayValue;
-          spectatorBaseTimeRef.current = Date.now();
-        }
-
-        // Only admin needs to track start time for local calculation
-        if (isAdmin && data.is_running && data.start_time) {
-          startTimeRef.current = new Date(data.start_time).getTime();
-          baseElapsedRef.current = 0; // Admin calculates from start_time, not from elapsed_seconds
-        }
       }
       setIsLoading(false);
     };
 
     fetchState();
-  }, [isAdmin]);
+  }, []);
 
-  // Subscribe to real-time changes
+  /**
+   * Subscribe to real-time state changes
+   * Only state CHANGES are broadcast (start, stop, lap, reset)
+   * NOT per-second tick updates
+   */
   useEffect(() => {
     const channel = supabase
       .channel("race_state_changes")
@@ -95,36 +145,18 @@ export const useRaceState = (isAdmin: boolean) => {
           filter: `id=eq.${RACE_STATE_ID}`,
         },
         (payload) => {
-          const newData = payload.new as any;
-          if (newData) {
-            const lapTimesArray = Array.isArray(newData.lap_times)
-              ? newData.lap_times
-              : [];
+          const dbData = payload.new as DbRaceState;
+          if (dbData) {
+            const lapTimesArray = Array.isArray(dbData.lap_times) ? dbData.lap_times : [];
 
             setRaceState({
-              isRunning: newData.is_running,
-              startTime: newData.start_time,
-              elapsedSeconds: newData.elapsed_seconds,
+              isRunning: dbData.is_running,
+              startedAtMs: dbData.started_at_ms,
+              pausedOffsetMs: dbData.paused_offset_ms ?? 0,
               currentLap: lapTimesArray.length,
               lapTimes: lapTimesArray,
-              totalRaceTime: newData.total_race_time,
+              totalRaceTimeMs: dbData.total_race_time * 1000,
             });
-
-            // NON-ADMIN: Set base for interpolation (add 1 second to compensate for network delay)
-            if (!isAdmin) {
-              const compensatedElapsed = newData.elapsed_seconds + 1;
-              spectatorBaseElapsedRef.current = compensatedElapsed;
-              spectatorBaseTimeRef.current = Date.now();
-              setDisplayElapsed(compensatedElapsed);
-            }
-
-            // ADMIN: Update start time ref when race starts
-            if (isAdmin && newData.is_running && newData.start_time) {
-              startTimeRef.current = new Date(newData.start_time).getTime();
-              baseElapsedRef.current = 0;
-            } else if (!newData.is_running) {
-              startTimeRef.current = null;
-            }
           }
         }
       )
@@ -133,177 +165,136 @@ export const useRaceState = (isAdmin: boolean) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isAdmin]);
+  }, []);
 
-  // SPECTATOR ONLY: Local interpolation timer between server updates
+  /**
+   * Calculate elapsed time locally using server timestamp
+   *
+   * This runs on every animation frame when the race is running.
+   * All time calculation is derived from the server's started_at_ms timestamp.
+   *
+   * Formula: elapsedMs = correctedNow - startedAtMs - pausedOffsetMs
+   * where correctedNow = Date.now() + clockOffset
+   */
   useEffect(() => {
-    if (isAdmin) return;
-    if (!raceState.isRunning) {
+    if (!raceState.isRunning || raceState.startedAtMs === null) {
+      // Race not running - stop animation loop
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
       return;
     }
 
-    // Interpolate locally between server updates
-    const interpolate = () => {
-      const now = Date.now();
-      const timeSinceUpdate = Math.floor((now - spectatorBaseTimeRef.current) / 1000);
-      const interpolatedElapsed = spectatorBaseElapsedRef.current + timeSinceUpdate;
-      setDisplayElapsed(interpolatedElapsed);
+    const updateElapsed = () => {
+      // Get server-corrected current time
+      const correctedNow = Date.now() + clockOffsetRef.current;
+
+      // Calculate elapsed time from server timestamp
+      const elapsed = correctedNow - raceState.startedAtMs! - raceState.pausedOffsetMs;
+
+      setElapsedMs(Math.max(0, elapsed));
+
+      // Continue animation loop
+      animationFrameRef.current = requestAnimationFrame(updateElapsed);
     };
 
-    // Update display every second
-    const intervalId = setInterval(interpolate, 1000);
+    // Start animation loop
+    animationFrameRef.current = requestAnimationFrame(updateElapsed);
 
     return () => {
-      clearInterval(intervalId);
-    };
-  }, [isAdmin, raceState.isRunning]);
-
-  // ADMIN ONLY: Timer for display updates and database broadcasts
-  useEffect(() => {
-    // Only admin runs local timer
-    if (!isAdmin) {
-      return;
-    }
-
-    if (!raceState.isRunning) {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      if (broadcastRef.current) {
-        clearInterval(broadcastRef.current);
-        broadcastRef.current = null;
-      }
-      return;
-    }
-
-    if (!startTimeRef.current) {
-      return;
-    }
-
-    const startTime = startTimeRef.current;
-
-    // Update display every second
-    const updateDisplay = () => {
-      const now = Date.now();
-      const elapsed = Math.floor((now - startTime) / 1000);
-      setDisplayElapsed(elapsed);
-    };
-
-    // Initial update
-    updateDisplay();
-
-    // Update display every second
-    timerRef.current = setInterval(updateDisplay, 1000);
-
-    // Broadcast to database every second
-    const broadcast = async () => {
-      const now = Date.now();
-      const elapsed = Math.floor((now - startTime) / 1000);
-
-      await supabase
-        .from("race_state")
-        .update({
-          elapsed_seconds: elapsed,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", RACE_STATE_ID);
-    };
-
-    // Start broadcasting (offset by 500ms)
-    const broadcastTimeout = setTimeout(() => {
-      broadcast();
-      broadcastRef.current = setInterval(broadcast, 1000);
-    }, 500);
-
-    return () => {
-      clearTimeout(broadcastTimeout);
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      if (broadcastRef.current) {
-        clearInterval(broadcastRef.current);
-        broadcastRef.current = null;
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
     };
-  }, [isAdmin, raceState.isRunning]);
+  }, [raceState.isRunning, raceState.startedAtMs, raceState.pausedOffsetMs]);
 
-  // Admin actions
+  /**
+   * Admin action: Start or Stop the race
+   * Only updates server state - all clients receive via realtime subscription
+   */
   const startStop = useCallback(async () => {
     if (!isAdmin) return;
 
     const newIsRunning = !raceState.isRunning;
 
     if (newIsRunning) {
-      // Starting - reset and start the race
-      const now = new Date().toISOString();
+      // Starting race - set server timestamp
+      // Use server function to ensure we get server time, not client time
+      const { data: serverTimeMs } = await supabase.rpc("get_server_time_ms");
+
       await supabase
         .from("race_state")
         .update({
           is_running: true,
-          start_time: now,
-          elapsed_seconds: 0,
+          started_at_ms: Number(serverTimeMs),
+          paused_offset_ms: 0,
+          elapsed_seconds: 0, // Reset legacy field
           lap_times: [],
-          updated_at: now,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", RACE_STATE_ID);
     } else {
-      // Stopping
-      const now = new Date().toISOString();
+      // Stopping race
       await supabase
         .from("race_state")
         .update({
           is_running: false,
-          start_time: null,
-          updated_at: now,
+          started_at_ms: null,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", RACE_STATE_ID);
     }
   }, [isAdmin, raceState.isRunning]);
 
+  /**
+   * Admin action: Record a lap
+   */
   const recordLap = useCallback(async () => {
     if (!isAdmin || !raceState.isRunning) return;
 
-    const totalElapsed = displayElapsed;
+    const totalElapsedSec = Math.floor(elapsedMs / 1000);
     const previousLapsTotal = raceState.lapTimes.reduce((a, b) => a + b, 0);
-    const currentLapTime = totalElapsed - previousLapsTotal;
+    const currentLapTime = totalElapsedSec - previousLapsTotal;
 
     const newLapTimes = [...raceState.lapTimes, currentLapTime];
-    const now = new Date().toISOString();
 
     await supabase
       .from("race_state")
       .update({
         lap_times: newLapTimes,
-        updated_at: now,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", RACE_STATE_ID);
-  }, [isAdmin, raceState.isRunning, raceState.lapTimes, displayElapsed]);
+  }, [isAdmin, raceState.isRunning, raceState.lapTimes, elapsedMs]);
 
+  /**
+   * Admin action: Reset the race
+   */
   const reset = useCallback(async () => {
     if (!isAdmin) return;
 
-    const now = new Date().toISOString();
     await supabase
       .from("race_state")
       .update({
         is_running: false,
-        start_time: null,
+        started_at_ms: null,
+        paused_offset_ms: 0,
         elapsed_seconds: 0,
         lap_times: [],
-        updated_at: now,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", RACE_STATE_ID);
 
-    baseElapsedRef.current = 0;
-    startTimeRef.current = null;
-    setDisplayElapsed(0);
+    setElapsedMs(0);
   }, [isAdmin]);
 
-  const timeLeft = Math.max(0, raceState.totalRaceTime - displayElapsed);
+  // Convert elapsed milliseconds to seconds for display
+  const elapsedSeconds = Math.floor(elapsedMs / 1000);
+  const timeLeft = Math.max(0, Math.floor(raceState.totalRaceTimeMs / 1000) - elapsedSeconds);
   const previousLapsTotal = raceState.lapTimes.reduce((a, b) => a + b, 0);
-  const currentLapElapsed = displayElapsed - previousLapsTotal;
+  const currentLapElapsed = elapsedSeconds - previousLapsTotal;
 
   return {
     timeLeft,
@@ -311,7 +302,7 @@ export const useRaceState = (isAdmin: boolean) => {
     currentLap: raceState.lapTimes.length,
     lapTimes: raceState.lapTimes,
     currentLapElapsed,
-    totalRaceTime: raceState.totalRaceTime,
+    totalRaceTime: Math.floor(raceState.totalRaceTimeMs / 1000),
     isLoading,
     startStop,
     recordLap,

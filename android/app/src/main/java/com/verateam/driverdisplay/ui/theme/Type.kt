@@ -2,12 +2,20 @@ package com.verateam.driverdisplay.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import com.verateam.driverdisplay.R
 
-// Use system monospace font for now
-val DisplayFamily = FontFamily.Monospace
+// Orbitron font for display values (racing/tech style)
+val DisplayFamily = FontFamily(
+    Font(R.font.orbitron_regular, FontWeight.Normal),
+    Font(R.font.orbitron_bold, FontWeight.Bold),
+    Font(R.font.orbitron_black, FontWeight.Black)
+)
+
+// Use system monospace for body text
 val BodyFamily = FontFamily.Monospace
 
 val Typography = Typography(
