@@ -22,7 +22,7 @@ fun Panel(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(6.dp)
 
     Column(
         modifier = modifier
@@ -47,7 +47,7 @@ fun DataLabel(text: String) {
         text = text.uppercase(),
         style = MaterialTheme.typography.labelSmall,
         color = OnSurfaceVariant,
-        letterSpacing = 2.sp
+        letterSpacing = 1.5.sp
     )
 }
 
@@ -55,7 +55,8 @@ fun DataLabel(text: String) {
 fun DataValue(
     value: String,
     color: Color = OnSurface,
-    size: DataValueSize = DataValueSize.Large
+    size: DataValueSize = DataValueSize.Large,
+    modifier: Modifier = Modifier
 ) {
     Text(
         text = value,
@@ -63,13 +64,14 @@ fun DataValue(
             fontSize = when (size) {
                 DataValueSize.Small -> 24.sp
                 DataValueSize.Medium -> 36.sp
-                DataValueSize.Large -> 56.sp
+                DataValueSize.Large -> 48.sp
                 DataValueSize.XLarge -> 72.sp
             },
             fontWeight = FontWeight.Bold,
             letterSpacing = 2.sp
         ),
-        color = color
+        color = color,
+        modifier = modifier
     )
 }
 

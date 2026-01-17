@@ -38,8 +38,8 @@ fun LapProgress(
             ) {
                 Text(
                     text = currentLap.toString(),
-                    style = MaterialTheme.typography.displayLarge.copy(
-                        fontSize = 48.sp,
+                    style = MaterialTheme.typography.displayMedium.copy(
+                        fontSize = 36.sp,
                         fontWeight = FontWeight.Bold
                     ),
                     color = RacingGreen
@@ -47,13 +47,13 @@ fun LapProgress(
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = "/",
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineSmall,
                     color = OnSurfaceVariant
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = totalLaps.toString(),
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineSmall,
                     color = OnSurfaceVariant
                 )
             }

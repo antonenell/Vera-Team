@@ -18,6 +18,8 @@ fun SpeedDisplay(
     modifier: Modifier = Modifier
 ) {
     val speedInt = speed.toInt()
+    // Pad speed to 3 digits for consistent display
+    val speedFormatted = speedInt.toString().padStart(3, '0')
 
     Panel(modifier = modifier) {
         Column(
@@ -28,18 +30,19 @@ fun SpeedDisplay(
             DataLabel("Speed")
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = speedInt.toString(),
+                text = speedFormatted,
                 style = MaterialTheme.typography.displayLarge.copy(
-                    fontSize = 72.sp,
+                    fontSize = 80.sp,
                     fontWeight = FontWeight.Black,
                     letterSpacing = 4.sp
                 ),
                 color = OnSurface
             )
             Text(
-                text = "KM/H",
+                text = "km/h",
                 style = MaterialTheme.typography.labelMedium,
-                color = OnSurfaceVariant
+                color = OnSurfaceVariant,
+                letterSpacing = 1.sp
             )
         }
     }
