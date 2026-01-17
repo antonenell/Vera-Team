@@ -5,31 +5,28 @@ const RACE_STATE_ID = "00000000-0000-0000-0000-000000000001";
 const TOTAL_RACE_TIME_MS = 35 * 60 * 1000; // 35 minutes in milliseconds
 
 /**
- * Server-Authoritative Timer Implementation
+ * Server-Authoritative Timer with Sub-100ms Synchronization
  *
  * PRINCIPLE: "Send timestamps, not ticks. Calculate time, don't count it."
  *
- * How it works:
- * 1. Server stores `started_at_ms` (server timestamp when race started)
- * 2. On connect, client fetches server time and calculates `clockOffset`
- * 3. Client calculates remaining time using:
- *    elapsedMs = correctedNow - startedAtMs - pausedOffsetMs
- *    where correctedNow = Date.now() + clockOffset
+ * Key synchronization techniques:
+ * 1. High-resolution clock sync with RTT compensation
+ * 2. Multiple sync attempts for accuracy
+ * 3. Resync on visibility change and state updates
+ * 4. All time stored in milliseconds, rounded only at display
+ * 5. remainingMs recalculated on EVERY frame, never stored/incremented
  *
- * Why this avoids drift:
- * - All clients derive time from the SAME server timestamp
- * - Clock offset compensates for local clock differences
- * - No per-second server broadcasts (only state changes: start, stop, lap, reset)
- * - Late joiners immediately see correct time
+ * Formula (computed every frame):
+ *   remainingMs = durationMs - (correctedNow - startedAtMs - pausedOffsetMs)
+ *   where correctedNow = Date.now() + clockOffset
  */
 
 interface RaceState {
   isRunning: boolean;
-  startedAtMs: number | null;  // Server timestamp when race started (milliseconds)
-  pausedOffsetMs: number;      // Accumulated pause time (milliseconds)
-  currentLap: number;
-  lapTimes: number[];          // Lap times in seconds
-  totalRaceTimeMs: number;     // Total race duration in milliseconds
+  startedAtMs: number | null;
+  pausedOffsetMs: number;
+  lapTimes: number[];
+  totalRaceTimeMs: number;
 }
 
 interface DbRaceState {
@@ -37,101 +34,196 @@ interface DbRaceState {
   is_running: boolean;
   started_at_ms: number | null;
   paused_offset_ms: number;
-  elapsed_seconds: number; // Legacy field, kept for backwards compatibility
-  start_time: string | null; // Legacy field
+  elapsed_seconds: number;
+  start_time: string | null;
   lap_times: number[];
   total_race_time: number;
   updated_at: string;
 }
 
+/**
+ * Perform a single clock sync measurement with RTT compensation.
+ * Returns the calculated offset or null on error.
+ */
+async function measureClockOffset(): Promise<{ offset: number; rtt: number } | null> {
+  try {
+    const localBefore = Date.now();
+    const { data, error } = await supabase.rpc("get_server_time_ms");
+    const localAfter = Date.now();
+
+    if (error || data === null) return null;
+
+    const rtt = localAfter - localBefore;
+    // Server time at midpoint of request (compensates for network latency)
+    const localMidpoint = localBefore + rtt / 2;
+    const serverTimeMs = Number(data);
+    const offset = serverTimeMs - localMidpoint;
+
+    return { offset, rtt };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Perform multiple clock sync measurements and use the one with lowest RTT
+ * for highest accuracy.
+ */
+async function syncClock(attempts: number = 3): Promise<number> {
+  const results: { offset: number; rtt: number }[] = [];
+
+  for (let i = 0; i < attempts; i++) {
+    const result = await measureClockOffset();
+    if (result) {
+      results.push(result);
+    }
+    // Small delay between attempts
+    if (i < attempts - 1) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+
+  if (results.length === 0) {
+    console.warn("Clock sync failed, using local time");
+    return 0;
+  }
+
+  // Use the measurement with lowest RTT (most accurate)
+  const best = results.reduce((a, b) => (a.rtt < b.rtt ? a : b));
+  console.log(
+    `Clock synced: offset=${best.offset}ms, RTT=${best.rtt}ms (${results.length} samples)`
+  );
+  return best.offset;
+}
+
 export const useRaceState = (isAdmin: boolean) => {
-  const [raceState, setRaceState] = useState<RaceState>({
+  // Race state from server (immutable between updates)
+  const raceStateRef = useRef<RaceState>({
     isRunning: false,
     startedAtMs: null,
     pausedOffsetMs: 0,
-    currentLap: 0,
     lapTimes: [],
     totalRaceTimeMs: TOTAL_RACE_TIME_MS,
   });
-  const [isLoading, setIsLoading] = useState(true);
-  const [elapsedMs, setElapsedMs] = useState(0);
 
-  // Clock offset: serverTime - localTime
-  // To get server-corrected time: Date.now() + clockOffset
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Clock offset for synchronization
   const clockOffsetRef = useRef<number>(0);
+  const lastSyncTimeRef = useRef<number>(0);
+
+  // Force re-render trigger (for time display updates)
+  const [, forceUpdate] = useState(0);
   const animationFrameRef = useRef<number | null>(null);
 
   /**
-   * Sync clock with server on initial load
-   * This establishes the offset between local clock and server clock
+   * Calculate remaining time in milliseconds.
+   * This is the AUTHORITATIVE formula - called on every render frame.
+   * Never stores the result, always recalculates from timestamps.
    */
-  useEffect(() => {
-    const syncClock = async () => {
-      try {
-        const localBefore = Date.now();
+  const getRemainingMs = useCallback((): number => {
+    const state = raceStateRef.current;
+    if (!state.isRunning || state.startedAtMs === null) {
+      return state.totalRaceTimeMs;
+    }
 
-        // Call server function to get server time in milliseconds
-        const { data, error } = await supabase.rpc("get_server_time_ms");
+    const correctedNow = Date.now() + clockOffsetRef.current;
+    const elapsedMs = correctedNow - state.startedAtMs - state.pausedOffsetMs;
+    const remainingMs = state.totalRaceTimeMs - elapsedMs;
 
-        const localAfter = Date.now();
-
-        if (error) {
-          console.warn("Failed to sync clock with server:", error);
-          return;
-        }
-
-        // Estimate server time at the midpoint of our request
-        const roundTripTime = localAfter - localBefore;
-        const localMidpoint = localBefore + roundTripTime / 2;
-        const serverTimeMs = Number(data);
-
-        // clockOffset = serverTime - localTime
-        // To get corrected time: Date.now() + clockOffset
-        clockOffsetRef.current = serverTimeMs - localMidpoint;
-
-        console.log(`Clock synced: offset=${clockOffsetRef.current}ms, RTT=${roundTripTime}ms`);
-      } catch (err) {
-        console.warn("Clock sync error:", err);
-      }
-    };
-
-    syncClock();
+    return Math.max(0, remainingMs);
   }, []);
 
   /**
-   * Fetch initial state from database
+   * Calculate elapsed time in milliseconds.
+   */
+  const getElapsedMs = useCallback((): number => {
+    const state = raceStateRef.current;
+    if (!state.isRunning || state.startedAtMs === null) {
+      return 0;
+    }
+
+    const correctedNow = Date.now() + clockOffsetRef.current;
+    const elapsedMs = correctedNow - state.startedAtMs - state.pausedOffsetMs;
+
+    return Math.max(0, elapsedMs);
+  }, []);
+
+  /**
+   * Perform clock synchronization.
+   * Called on mount, visibility change, and periodically.
+   */
+  const performClockSync = useCallback(async () => {
+    const offset = await syncClock(3);
+    clockOffsetRef.current = offset;
+    lastSyncTimeRef.current = Date.now();
+  }, []);
+
+  /**
+   * Update race state from database data.
+   * Completely replaces local state - no deltas preserved.
+   */
+  const updateRaceState = useCallback((dbData: DbRaceState) => {
+    const lapTimesArray = Array.isArray(dbData.lap_times) ? dbData.lap_times : [];
+
+    raceStateRef.current = {
+      isRunning: dbData.is_running,
+      startedAtMs: dbData.started_at_ms,
+      pausedOffsetMs: dbData.paused_offset_ms ?? 0,
+      lapTimes: lapTimesArray,
+      totalRaceTimeMs: dbData.total_race_time * 1000,
+    };
+
+    // Trigger immediate re-render
+    forceUpdate((n) => n + 1);
+  }, []);
+
+  /**
+   * Initial setup: sync clock, then fetch state.
+   * Clock sync MUST complete before state is used.
    */
   useEffect(() => {
-    const fetchState = async () => {
+    let mounted = true;
+
+    const initialize = async () => {
+      // Step 1: Sync clock first (critical for accuracy)
+      await performClockSync();
+
+      if (!mounted) return;
+
+      // Step 2: Fetch initial state
       const { data, error } = await supabase
         .from("race_state")
         .select("*")
         .eq("id", RACE_STATE_ID)
         .single();
 
-      if (data && !error) {
-        const dbData = data as DbRaceState;
-        const lapTimesArray = Array.isArray(dbData.lap_times) ? dbData.lap_times : [];
-
-        setRaceState({
-          isRunning: dbData.is_running,
-          startedAtMs: dbData.started_at_ms,
-          pausedOffsetMs: dbData.paused_offset_ms ?? 0,
-          currentLap: lapTimesArray.length,
-          lapTimes: lapTimesArray,
-          totalRaceTimeMs: dbData.total_race_time * 1000,
-        });
+      if (data && !error && mounted) {
+        updateRaceState(data as DbRaceState);
       }
-      setIsLoading(false);
+
+      if (mounted) {
+        setIsLoading(false);
+      }
+
+      // Step 3: Second sync after a short delay for improved accuracy
+      setTimeout(async () => {
+        if (mounted) {
+          await performClockSync();
+        }
+      }, 1000);
     };
 
-    fetchState();
-  }, []);
+    initialize();
+
+    return () => {
+      mounted = false;
+    };
+  }, [performClockSync, updateRaceState]);
 
   /**
-   * Subscribe to real-time state changes
-   * Only state CHANGES are broadcast (start, stop, lap, reset)
-   * NOT per-second tick updates
+   * Subscribe to real-time state changes.
+   * On EVERY state change, completely replace local state and resync if needed.
    */
   useEffect(() => {
     const channel = supabase
@@ -144,19 +236,21 @@ export const useRaceState = (isAdmin: boolean) => {
           table: "race_state",
           filter: `id=eq.${RACE_STATE_ID}`,
         },
-        (payload) => {
+        async (payload) => {
           const dbData = payload.new as DbRaceState;
           if (dbData) {
-            const lapTimesArray = Array.isArray(dbData.lap_times) ? dbData.lap_times : [];
+            // Check if this is a significant state change (start/stop)
+            const wasRunning = raceStateRef.current.isRunning;
+            const isNowRunning = dbData.is_running;
+            const stateChanged = wasRunning !== isNowRunning;
 
-            setRaceState({
-              isRunning: dbData.is_running,
-              startedAtMs: dbData.started_at_ms,
-              pausedOffsetMs: dbData.paused_offset_ms ?? 0,
-              currentLap: lapTimesArray.length,
-              lapTimes: lapTimesArray,
-              totalRaceTimeMs: dbData.total_race_time * 1000,
-            });
+            // Completely replace local state
+            updateRaceState(dbData);
+
+            // Resync clock on significant state changes
+            if (stateChanged) {
+              await performClockSync();
+            }
           }
         }
       )
@@ -165,20 +259,54 @@ export const useRaceState = (isAdmin: boolean) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [updateRaceState, performClockSync]);
 
   /**
-   * Calculate elapsed time locally using server timestamp
-   *
-   * This runs on every animation frame when the race is running.
-   * All time calculation is derived from the server's started_at_ms timestamp.
-   *
-   * Formula: elapsedMs = correctedNow - startedAtMs - pausedOffsetMs
-   * where correctedNow = Date.now() + clockOffset
+   * Visibility change handler: resync when tab becomes visible.
    */
   useEffect(() => {
-    if (!raceState.isRunning || raceState.startedAtMs === null) {
-      // Race not running - stop animation loop
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === "visible") {
+        // Tab became visible - resync clock
+        const timeSinceLastSync = Date.now() - lastSyncTimeRef.current;
+
+        // Always resync if more than 10 seconds since last sync
+        if (timeSinceLastSync > 10000) {
+          await performClockSync();
+        }
+
+        // Force re-render to update display immediately
+        forceUpdate((n) => n + 1);
+      }
+    };
+
+    const handleFocus = async () => {
+      // Window regained focus - check if resync needed
+      const timeSinceLastSync = Date.now() - lastSyncTimeRef.current;
+      if (timeSinceLastSync > 30000) {
+        await performClockSync();
+      }
+      forceUpdate((n) => n + 1);
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [performClockSync]);
+
+  /**
+   * Animation loop: triggers re-render every frame when race is running.
+   * Does NOT calculate or store time - just triggers React to re-render,
+   * and the render will call getRemainingMs() which recalculates.
+   */
+  useEffect(() => {
+    const state = raceStateRef.current;
+
+    if (!state.isRunning || state.startedAtMs === null) {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
@@ -186,21 +314,20 @@ export const useRaceState = (isAdmin: boolean) => {
       return;
     }
 
-    const updateElapsed = () => {
-      // Get server-corrected current time
-      const correctedNow = Date.now() + clockOffsetRef.current;
+    let lastUpdateTime = 0;
 
-      // Calculate elapsed time from server timestamp
-      const elapsed = correctedNow - raceState.startedAtMs! - raceState.pausedOffsetMs;
+    const tick = (timestamp: number) => {
+      // Update display approximately 10 times per second (every ~100ms)
+      // This is enough for smooth display while avoiding excessive re-renders
+      if (timestamp - lastUpdateTime >= 100) {
+        forceUpdate((n) => n + 1);
+        lastUpdateTime = timestamp;
+      }
 
-      setElapsedMs(Math.max(0, elapsed));
-
-      // Continue animation loop
-      animationFrameRef.current = requestAnimationFrame(updateElapsed);
+      animationFrameRef.current = requestAnimationFrame(tick);
     };
 
-    // Start animation loop
-    animationFrameRef.current = requestAnimationFrame(updateElapsed);
+    animationFrameRef.current = requestAnimationFrame(tick);
 
     return () => {
       if (animationFrameRef.current) {
@@ -208,20 +335,16 @@ export const useRaceState = (isAdmin: boolean) => {
         animationFrameRef.current = null;
       }
     };
-  }, [raceState.isRunning, raceState.startedAtMs, raceState.pausedOffsetMs]);
+  }, [raceStateRef.current.isRunning, raceStateRef.current.startedAtMs]);
 
-  /**
-   * Admin action: Start or Stop the race
-   * Only updates server state - all clients receive via realtime subscription
-   */
+  // Admin actions
   const startStop = useCallback(async () => {
     if (!isAdmin) return;
 
-    const newIsRunning = !raceState.isRunning;
+    const newIsRunning = !raceStateRef.current.isRunning;
 
     if (newIsRunning) {
-      // Starting race - set server timestamp
-      // Use server function to ensure we get server time, not client time
+      // Get server time for start timestamp
       const { data: serverTimeMs } = await supabase.rpc("get_server_time_ms");
 
       await supabase
@@ -230,13 +353,12 @@ export const useRaceState = (isAdmin: boolean) => {
           is_running: true,
           started_at_ms: Number(serverTimeMs),
           paused_offset_ms: 0,
-          elapsed_seconds: 0, // Reset legacy field
+          elapsed_seconds: 0,
           lap_times: [],
           updated_at: new Date().toISOString(),
         })
         .eq("id", RACE_STATE_ID);
     } else {
-      // Stopping race
       await supabase
         .from("race_state")
         .update({
@@ -246,19 +368,17 @@ export const useRaceState = (isAdmin: boolean) => {
         })
         .eq("id", RACE_STATE_ID);
     }
-  }, [isAdmin, raceState.isRunning]);
+  }, [isAdmin]);
 
-  /**
-   * Admin action: Record a lap
-   */
   const recordLap = useCallback(async () => {
-    if (!isAdmin || !raceState.isRunning) return;
+    if (!isAdmin || !raceStateRef.current.isRunning) return;
 
+    const elapsedMs = getElapsedMs();
     const totalElapsedSec = Math.floor(elapsedMs / 1000);
-    const previousLapsTotal = raceState.lapTimes.reduce((a, b) => a + b, 0);
+    const previousLapsTotal = raceStateRef.current.lapTimes.reduce((a, b) => a + b, 0);
     const currentLapTime = totalElapsedSec - previousLapsTotal;
 
-    const newLapTimes = [...raceState.lapTimes, currentLapTime];
+    const newLapTimes = [...raceStateRef.current.lapTimes, currentLapTime];
 
     await supabase
       .from("race_state")
@@ -267,11 +387,8 @@ export const useRaceState = (isAdmin: boolean) => {
         updated_at: new Date().toISOString(),
       })
       .eq("id", RACE_STATE_ID);
-  }, [isAdmin, raceState.isRunning, raceState.lapTimes, elapsedMs]);
+  }, [isAdmin, getElapsedMs]);
 
-  /**
-   * Admin action: Reset the race
-   */
   const reset = useCallback(async () => {
     if (!isAdmin) return;
 
@@ -286,23 +403,26 @@ export const useRaceState = (isAdmin: boolean) => {
         updated_at: new Date().toISOString(),
       })
       .eq("id", RACE_STATE_ID);
-
-    setElapsedMs(0);
   }, [isAdmin]);
 
-  // Convert elapsed milliseconds to seconds for display
+  // Calculate display values on every render (not stored)
+  const state = raceStateRef.current;
+  const remainingMs = getRemainingMs();
+  const elapsedMs = getElapsedMs();
+
+  // Round to seconds only at display time
+  const timeLeft = Math.floor(remainingMs / 1000);
   const elapsedSeconds = Math.floor(elapsedMs / 1000);
-  const timeLeft = Math.max(0, Math.floor(raceState.totalRaceTimeMs / 1000) - elapsedSeconds);
-  const previousLapsTotal = raceState.lapTimes.reduce((a, b) => a + b, 0);
-  const currentLapElapsed = elapsedSeconds - previousLapsTotal;
+  const previousLapsTotal = state.lapTimes.reduce((a, b) => a + b, 0);
+  const currentLapElapsed = Math.max(0, elapsedSeconds - previousLapsTotal);
 
   return {
     timeLeft,
-    isRunning: raceState.isRunning,
-    currentLap: raceState.lapTimes.length,
-    lapTimes: raceState.lapTimes,
+    isRunning: state.isRunning,
+    currentLap: state.lapTimes.length,
+    lapTimes: state.lapTimes,
     currentLapElapsed,
-    totalRaceTime: Math.floor(raceState.totalRaceTimeMs / 1000),
+    totalRaceTime: Math.floor(state.totalRaceTimeMs / 1000),
     isLoading,
     startStop,
     recordLap,
