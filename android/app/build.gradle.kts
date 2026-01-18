@@ -67,7 +67,6 @@ dependencies {
 
     // Mapbox Maps
     implementation(libs.mapbox.maps)
-    implementation(libs.mapbox.maps.compose)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
