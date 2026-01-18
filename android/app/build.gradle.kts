@@ -65,6 +65,10 @@ dependencies {
     // Serialization
     implementation(libs.kotlinx.serialization.json)
 
+    // Mapbox Maps
+    implementation(libs.mapbox.maps)
+    implementation(libs.mapbox.maps.compose)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

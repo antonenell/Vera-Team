@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">DriverDisplay</string>
+    <string name="mapbox_access_token" translatable="false">pk.eyJ1IjoiY2FybGJlcmdlIiwiYSI6ImNsMnh3OXZrYTBsNzUzaWp6NzlvdDM4bzgifQ.YiaCxeUA5RaJn7071yd42A</string>
 </resources>
