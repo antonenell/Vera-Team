@@ -1,6 +1,5 @@
 package com.verateam.driverdisplay.ui.components
 
-import android.content.Context
 import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,13 +11,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.mapbox.geojson.Point
-import com.mapbox.maps.CameraOptions
-import com.mapbox.maps.MapInitOptions
-import com.mapbox.maps.MapView
-import com.mapbox.maps.MapboxOptions
+import com.mapbox.maps.MapboxExperimental
 import com.mapbox.maps.Style
+import com.mapbox.maps.extension.compose.MapEffect
+import com.mapbox.maps.extension.compose.MapboxMap
+import com.mapbox.maps.extension.compose.animation.viewport.rememberMapViewportState
+import com.mapbox.maps.extension.compose.style.MapStyle
 import com.mapbox.maps.plugin.annotation.annotations
 import com.mapbox.maps.plugin.annotation.generated.CircleAnnotation
 import com.mapbox.maps.plugin.annotation.generated.CircleAnnotationManager
@@ -30,21 +29,21 @@ import com.verateam.driverdisplay.ui.theme.RacingGreen
 
 private const val TAG = "TrackMap"
 
-// Mapbox style URL - try published version first (without /draft)
+// Mapbox style URL - your custom published style
 private const val MAPBOX_STYLE_URL = "mapbox://styles/carlberge/cmj42ghcf009601r47hgyaiku"
 
 // Track configurations matching the web app
 data class TrackConfig(
     val name: String,
-    val bounds: Pair<Pair<Double, Double>, Pair<Double, Double>>, // [[lng, lat], [lng, lat]]
-    val center: Pair<Double, Double>, // [lng, lat]
+    val bounds: Pair<Pair<Double, Double>, Pair<Double, Double>>,
+    val center: Pair<Double, Double>,
     val zoom: Double,
     val flags: List<FlagPosition>
 )
 
 data class FlagPosition(
     val id: Int,
-    val coords: Pair<Double, Double> // [lng, lat]
+    val coords: Pair<Double, Double>
 )
 
 val tracks = mapOf(
@@ -69,27 +68,29 @@ val tracks = mapOf(
     )
 )
 
+@OptIn(MapboxExperimental::class)
 @Composable
 fun TrackMap(
     latitude: Double,
     longitude: Double,
     isCarOnline: Boolean,
-    flags: Map<String, String>, // flagId -> color (grey, yellow, red, black)
+    flags: Map<String, String>,
     selectedTrack: String = "stora-holm",
     modifier: Modifier = Modifier
 ) {
     val track = tracks[selectedTrack] ?: tracks["stora-holm"]!!
     val context = LocalContext.current
 
-    // Remember map view and annotation manager
+    // State for annotation manager
     var circleAnnotationManager by remember { mutableStateOf<CircleAnnotationManager?>(null) }
     var carAnnotation by remember { mutableStateOf<CircleAnnotation?>(null) }
-    var isMapReady by remember { mutableStateOf(false) }
 
-    // Initialize Mapbox access token once
-    LaunchedEffect(Unit) {
-        val accessToken = context.getString(R.string.mapbox_access_token)
-        MapboxOptions.accessToken = accessToken
+    // Viewport state centered on the track
+    val mapViewportState = rememberMapViewportState {
+        setCameraOptions {
+            center(Point.fromLngLat(track.center.first, track.center.second))
+            zoom(track.zoom)
+        }
     }
 
     Panel(
@@ -126,48 +127,19 @@ fun TrackMap(
                     .padding(horizontal = 8.dp)
                     .clip(RoundedCornerShape(8.dp))
             ) {
-                AndroidView(
-                    factory = { ctx ->
-                        // Set access token before creating MapView
-                        val accessToken = ctx.getString(R.string.mapbox_access_token)
-                        Log.d(TAG, "Setting Mapbox access token: ${accessToken.take(20)}...")
-                        MapboxOptions.accessToken = accessToken
-
-                        MapView(ctx).apply {
-                            // Set initial camera position
-                            mapboxMap.setCamera(
-                                CameraOptions.Builder()
-                                    .center(Point.fromLngLat(track.center.first, track.center.second))
-                                    .zoom(track.zoom)
-                                    .build()
-                            )
-
-                            Log.d(TAG, "Loading Mapbox style: $MAPBOX_STYLE_URL")
-
-                            // Load custom style with error callback
-                            mapboxMap.loadStyle(
-                                MAPBOX_STYLE_URL,
-                                onStyleLoaded = { style ->
-                                    Log.d(TAG, "Style loaded successfully!")
-                                    // Create annotation manager after style is loaded
-                                    circleAnnotationManager = annotations.createCircleAnnotationManager()
-                                    isMapReady = true
-                                },
-                                onMapLoadErrorListener = { error ->
-                                    Log.e(TAG, "Failed to load style: ${error.message}")
-                                    // Fallback to satellite streets style
-                                    Log.d(TAG, "Falling back to SATELLITE_STREETS style")
-                                    mapboxMap.loadStyle(Style.SATELLITE_STREETS) { style ->
-                                        Log.d(TAG, "Fallback style loaded")
-                                        circleAnnotationManager = annotations.createCircleAnnotationManager()
-                                        isMapReady = true
-                                    }
-                                }
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
+                MapboxMap(
+                    modifier = Modifier.fillMaxSize(),
+                    mapViewportState = mapViewportState,
+                    style = {
+                        MapStyle(style = MAPBOX_STYLE_URL)
+                    }
+                ) {
+                    // Get map view reference for annotations
+                    MapEffect(Unit) { mapView ->
+                        Log.d(TAG, "MapEffect triggered, setting up annotation manager")
+                        circleAnnotationManager = mapView.annotations.createCircleAnnotationManager()
+                    }
+                }
             }
 
             // Coordinates footer
@@ -192,9 +164,7 @@ fun TrackMap(
     }
 
     // Update car marker when position changes
-    LaunchedEffect(isMapReady, isCarOnline, latitude, longitude) {
-        if (!isMapReady) return@LaunchedEffect
-
+    LaunchedEffect(circleAnnotationManager, isCarOnline, latitude, longitude) {
         val manager = circleAnnotationManager ?: return@LaunchedEffect
 
         // Remove old car annotation
@@ -208,7 +178,7 @@ fun TrackMap(
             val circleAnnotationOptions = CircleAnnotationOptions()
                 .withPoint(Point.fromLngLat(longitude, latitude))
                 .withCircleRadius(8.0)
-                .withCircleColor("#22C55E") // Racing green
+                .withCircleColor("#22C55E")
                 .withCircleStrokeWidth(2.0)
                 .withCircleStrokeColor("#FFFFFF")
 
