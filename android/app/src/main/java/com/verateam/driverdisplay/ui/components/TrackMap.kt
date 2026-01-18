@@ -11,13 +11,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.mapbox.geojson.Point
+import com.mapbox.maps.CameraOptions
+import com.mapbox.maps.MapView
 import com.mapbox.maps.MapboxExperimental
 import com.mapbox.maps.Style
-import com.mapbox.maps.extension.compose.MapEffect
-import com.mapbox.maps.extension.compose.MapboxMap
-import com.mapbox.maps.extension.compose.animation.viewport.rememberMapViewportState
-import com.mapbox.maps.extension.compose.style.MapStyle
 import com.mapbox.maps.plugin.annotation.annotations
 import com.mapbox.maps.plugin.annotation.generated.CircleAnnotation
 import com.mapbox.maps.plugin.annotation.generated.CircleAnnotationManager
@@ -68,7 +67,6 @@ val tracks = mapOf(
     )
 )
 
-@OptIn(MapboxExperimental::class)
 @Composable
 fun TrackMap(
     latitude: Double,
@@ -79,19 +77,12 @@ fun TrackMap(
     modifier: Modifier = Modifier
 ) {
     val track = tracks[selectedTrack] ?: tracks["stora-holm"]!!
-    val context = LocalContext.current
 
-    // State for annotation manager
+    // State for annotation manager and map
+    var mapView by remember { mutableStateOf<MapView?>(null) }
     var circleAnnotationManager by remember { mutableStateOf<CircleAnnotationManager?>(null) }
     var carAnnotation by remember { mutableStateOf<CircleAnnotation?>(null) }
-
-    // Viewport state centered on the track
-    val mapViewportState = rememberMapViewportState {
-        setCameraOptions {
-            center(Point.fromLngLat(track.center.first, track.center.second))
-            zoom(track.zoom)
-        }
-    }
+    var isMapReady by remember { mutableStateOf(false) }
 
     Panel(
         modifier = modifier
@@ -127,19 +118,42 @@ fun TrackMap(
                     .padding(horizontal = 8.dp)
                     .clip(RoundedCornerShape(8.dp))
             ) {
-                MapboxMap(
-                    modifier = Modifier.fillMaxSize(),
-                    mapViewportState = mapViewportState,
-                    style = {
-                        MapStyle(style = MAPBOX_STYLE_URL)
-                    }
-                ) {
-                    // Get map view reference for annotations
-                    MapEffect(Unit) { mapView ->
-                        Log.d(TAG, "MapEffect triggered, setting up annotation manager")
-                        circleAnnotationManager = mapView.annotations.createCircleAnnotationManager()
-                    }
-                }
+                AndroidView(
+                    factory = { context ->
+                        MapView(context).apply {
+                            mapView = this
+
+                            // Set camera FIRST before loading style
+                            mapboxMap.setCamera(
+                                CameraOptions.Builder()
+                                    .center(Point.fromLngLat(track.center.first, track.center.second))
+                                    .zoom(track.zoom)
+                                    .build()
+                            )
+
+                            Log.d(TAG, "Loading style: $MAPBOX_STYLE_URL")
+                            Log.d(TAG, "Camera center: ${track.center}, zoom: ${track.zoom}")
+
+                            // Load the style
+                            mapboxMap.loadStyle(MAPBOX_STYLE_URL) { style ->
+                                Log.d(TAG, "Style loaded successfully")
+
+                                // Set camera again after style loads to ensure it sticks
+                                mapboxMap.setCamera(
+                                    CameraOptions.Builder()
+                                        .center(Point.fromLngLat(track.center.first, track.center.second))
+                                        .zoom(track.zoom)
+                                        .build()
+                                )
+
+                                // Create annotation manager
+                                circleAnnotationManager = annotations.createCircleAnnotationManager()
+                                isMapReady = true
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
             }
 
             // Coordinates footer
@@ -164,7 +178,8 @@ fun TrackMap(
     }
 
     // Update car marker when position changes
-    LaunchedEffect(circleAnnotationManager, isCarOnline, latitude, longitude) {
+    LaunchedEffect(isMapReady, isCarOnline, latitude, longitude) {
+        if (!isMapReady) return@LaunchedEffect
         val manager = circleAnnotationManager ?: return@LaunchedEffect
 
         // Remove old car annotation
@@ -183,6 +198,13 @@ fun TrackMap(
                 .withCircleStrokeColor("#FFFFFF")
 
             carAnnotation = manager.create(circleAnnotationOptions)
+        }
+    }
+
+    // Cleanup
+    DisposableEffect(Unit) {
+        onDispose {
+            mapView?.onDestroy()
         }
     }
 }
