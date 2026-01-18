@@ -1,6 +1,7 @@
 package com.verateam.driverdisplay.ui.components
 
 import android.content.Context
+import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -17,6 +18,7 @@ import com.mapbox.maps.CameraOptions
 import com.mapbox.maps.MapInitOptions
 import com.mapbox.maps.MapView
 import com.mapbox.maps.MapboxOptions
+import com.mapbox.maps.Style
 import com.mapbox.maps.plugin.annotation.annotations
 import com.mapbox.maps.plugin.annotation.generated.CircleAnnotation
 import com.mapbox.maps.plugin.annotation.generated.CircleAnnotationManager
@@ -26,8 +28,10 @@ import com.verateam.driverdisplay.R
 import com.verateam.driverdisplay.ui.theme.MutedForeground
 import com.verateam.driverdisplay.ui.theme.RacingGreen
 
-// Mapbox style URL (your custom style)
-private const val MAPBOX_STYLE_URL = "mapbox://styles/carlberge/cmj42ghcf009601r47hgyaiku/draft"
+private const val TAG = "TrackMap"
+
+// Mapbox style URL - try published version first (without /draft)
+private const val MAPBOX_STYLE_URL = "mapbox://styles/carlberge/cmj42ghcf009601r47hgyaiku"
 
 // Track configurations matching the web app
 data class TrackConfig(
@@ -126,6 +130,7 @@ fun TrackMap(
                     factory = { ctx ->
                         // Set access token before creating MapView
                         val accessToken = ctx.getString(R.string.mapbox_access_token)
+                        Log.d(TAG, "Setting Mapbox access token: ${accessToken.take(20)}...")
                         MapboxOptions.accessToken = accessToken
 
                         MapView(ctx).apply {
@@ -137,12 +142,28 @@ fun TrackMap(
                                     .build()
                             )
 
-                            // Load custom style
-                            mapboxMap.loadStyle(MAPBOX_STYLE_URL) { _ ->
-                                // Create annotation manager after style is loaded
-                                circleAnnotationManager = annotations.createCircleAnnotationManager()
-                                isMapReady = true
-                            }
+                            Log.d(TAG, "Loading Mapbox style: $MAPBOX_STYLE_URL")
+
+                            // Load custom style with error callback
+                            mapboxMap.loadStyle(
+                                MAPBOX_STYLE_URL,
+                                onStyleLoaded = { style ->
+                                    Log.d(TAG, "Style loaded successfully!")
+                                    // Create annotation manager after style is loaded
+                                    circleAnnotationManager = annotations.createCircleAnnotationManager()
+                                    isMapReady = true
+                                },
+                                onMapLoadErrorListener = { error ->
+                                    Log.e(TAG, "Failed to load style: ${error.message}")
+                                    // Fallback to satellite streets style
+                                    Log.d(TAG, "Falling back to SATELLITE_STREETS style")
+                                    mapboxMap.loadStyle(Style.SATELLITE_STREETS) { style ->
+                                        Log.d(TAG, "Fallback style loaded")
+                                        circleAnnotationManager = annotations.createCircleAnnotationManager()
+                                        isMapReady = true
+                                    }
+                                }
+                            )
                         }
                     },
                     modifier = Modifier.fillMaxSize()
