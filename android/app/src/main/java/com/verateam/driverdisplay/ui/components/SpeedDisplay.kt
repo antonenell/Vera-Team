@@ -17,9 +17,9 @@ fun SpeedDisplay(
     speed: Double,
     modifier: Modifier = Modifier
 ) {
-    val speedInt = speed.toInt()
-    // Pad speed to 3 digits for consistent display
-    val speedFormatted = speedInt.toString().padStart(3, '0')
+    val speedInt = speed.toInt().coerceIn(0, 99)
+    // Pad speed to 2 digits for consistent display (0-99 range)
+    val speedFormatted = speedInt.toString().padStart(2, '0')
 
     Panel(modifier = modifier) {
         Column(
