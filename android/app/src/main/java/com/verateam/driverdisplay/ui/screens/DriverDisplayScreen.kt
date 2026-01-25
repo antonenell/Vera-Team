@@ -31,7 +31,7 @@ fun DriverDisplayScreen(
 fun DriverDisplayContent(
     uiState: DriverUiState,
     formatTime: (Int) -> String,
-    getBestLapTime: () -> Int?
+    @Suppress("UNUSED_PARAMETER") getBestLapTime: () -> Int?
 ) {
     Box(
         modifier = Modifier
@@ -39,101 +39,81 @@ fun DriverDisplayContent(
             .background(Background)
             .padding(16.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Left side: Map
-            TrackMap(
-                latitude = uiState.latitude,
-                longitude = uiState.longitude,
-                isCarOnline = uiState.isConnected && (uiState.latitude != 0.0 || uiState.longitude != 0.0),
-                flags = uiState.flags.associate { it.flagId to (it.color ?: "") },
-                selectedTrack = uiState.selectedTrack,
+            // Top row: Time Remaining, Lap Progress, Speed
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-            )
-
-            // Right side: Stats panels
-            Column(
-                modifier = Modifier
-                    .weight(1.5f)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Top row: Time Remaining, Lap Progress, Speed
-                Row(
+                // Time Remaining - largest panel
+                TimeRemaining(
+                    timeLeftSeconds = uiState.timeLeftSeconds,
+                    totalRaceTime = uiState.totalRaceTime,
+                    isRunning = uiState.isRunning,
+                    formatTime = formatTime,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Time Remaining - largest panel
-                    TimeRemaining(
-                        timeLeftSeconds = uiState.timeLeftSeconds,
-                        totalRaceTime = uiState.totalRaceTime,
-                        isRunning = uiState.isRunning,
-                        formatTime = formatTime,
-                        modifier = Modifier
-                            .weight(1.5f)
-                            .fillMaxHeight()
-                    )
+                        .weight(1.5f)
+                        .fillMaxHeight()
+                )
 
-                    // Lap Progress
-                    LapProgress(
-                        currentLap = uiState.currentLap,
-                        totalLaps = uiState.totalLaps,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    )
-
-                    // Speed
-                    SpeedDisplay(
-                        speed = uiState.speed,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    )
-                }
-
-                // Bottom row: Current Lap Time, Best Lap Time, Flags
-                Row(
+                // Lap Progress
+                LapProgress(
+                    currentLap = uiState.currentLap,
+                    totalLaps = uiState.totalLaps,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(0.7f),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Current Lap Time
-                    LapTimeDisplay(
-                        label = "Current Lap",
-                        time = formatTime(uiState.currentLapElapsed),
-                        variant = LapTimeVariant.Current,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    )
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
 
-                    // Best Lap Time
-                    val bestLapTime = getBestLapTime()
-                    LapTimeDisplay(
-                        label = "Best Lap",
-                        time = if (bestLapTime != null) formatTime(bestLapTime) else "--:--",
-                        variant = if (bestLapTime != null) LapTimeVariant.Best else LapTimeVariant.Default,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    )
+                // Speed
+                SpeedDisplay(
+                    speed = uiState.speed,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+            }
 
-                    // Flags
-                    FlagIndicator(
-                        flags = uiState.flags,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    )
-                }
+            // Bottom row: Current Lap Time, Track Map, Flags
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(0.7f),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Current Lap Time
+                LapTimeDisplay(
+                    label = "Current Lap",
+                    time = formatTime(uiState.currentLapElapsed),
+                    variant = LapTimeVariant.Current,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+
+                // Track Map (replaces Best Lap)
+                TrackMap(
+                    latitude = uiState.latitude,
+                    longitude = uiState.longitude,
+                    isCarOnline = uiState.isConnected,
+                    flags = uiState.flags.associate { it.flagId to (it.color ?: "") },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
+
+                // Flags
+                FlagIndicator(
+                    flags = uiState.flags,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                )
             }
         }
 
