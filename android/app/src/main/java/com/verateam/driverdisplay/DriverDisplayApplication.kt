@@ -1,7 +1,7 @@
 package com.verateam.driverdisplay
 
 import android.app.Application
-import com.mapbox.maps.MapboxOptions
+import com.mapbox.common.MapboxOptions
 
 class DriverDisplayApplication : Application() {
     override fun onCreate() {

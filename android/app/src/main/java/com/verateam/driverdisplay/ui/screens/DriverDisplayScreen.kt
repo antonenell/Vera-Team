@@ -48,7 +48,7 @@ fun DriverDisplayContent(
                 latitude = uiState.latitude,
                 longitude = uiState.longitude,
                 isCarOnline = uiState.isConnected && (uiState.latitude != 0.0 || uiState.longitude != 0.0),
-                flags = uiState.flags.associate { it.flagId to it.color },
+                flags = uiState.flags.associate { it.flagId to (it.color ?: "") },
                 selectedTrack = uiState.selectedTrack,
                 modifier = Modifier
                     .weight(1f)
