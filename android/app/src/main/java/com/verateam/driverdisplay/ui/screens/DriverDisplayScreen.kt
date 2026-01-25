@@ -13,7 +13,6 @@ import com.verateam.driverdisplay.DriverUiState
 import com.verateam.driverdisplay.DriverViewModel
 import com.verateam.driverdisplay.ui.components.*
 import com.verateam.driverdisplay.ui.theme.Background
-import com.verateam.driverdisplay.data.TrackFlag
 
 @Composable
 fun DriverDisplayScreen(

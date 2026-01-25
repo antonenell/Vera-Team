@@ -50,13 +50,15 @@ class Repository {
     // Fetch track flags
     suspend fun fetchTrackFlags(trackId: String): List<TrackFlag> {
         return try {
-            supabase.from("track_flags")
+            val flags = supabase.from("track_flags")
                 .select {
                     filter {
                         eq("track_id", trackId)
                     }
                 }
                 .decodeList<TrackFlag>()
+            Log.d(TAG, "Fetched ${flags.size} flags for $trackId: ${flags.map { "${it.flagId}=${it.color}" }}")
+            flags
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching flags: ${e.message}")
             emptyList()
@@ -97,6 +99,22 @@ class Repository {
         } catch (e: Exception) {
             Log.e(TAG, "Error updating GPS: ${e.message}")
             false
+        }
+    }
+
+    // Fetch GPS telemetry
+    suspend fun fetchGpsTelemetry(): GpsTelemetry? {
+        return try {
+            supabase.from("gps_telemetry")
+                .select {
+                    filter {
+                        eq("id", GPS_TELEMETRY_ID)
+                    }
+                }
+                .decodeSingleOrNull<GpsTelemetry>()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching GPS telemetry: ${e.message}")
+            null
         }
     }
 

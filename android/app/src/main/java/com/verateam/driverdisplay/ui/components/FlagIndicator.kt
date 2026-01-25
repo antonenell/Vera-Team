@@ -70,12 +70,14 @@ private fun FlagDot(
     }
 }
 
-private fun getFlagColor(colorName: String): Color {
-    return when (colorName.lowercase()) {
+private fun getFlagColor(colorName: String?): Color {
+    return when (colorName?.lowercase()) {
         "green" -> RacingGreen
         "red" -> RacingRed
         "yellow" -> RacingYellow
         "blue" -> RacingBlue
-        else -> OnSurfaceVariant // Grey for inactive
+        "black" -> Color(0xFF1A1A1A)  // Matches web #1a1a1a
+        "grey" -> Color(0xFF71717A)   // Matches web #71717A
+        else -> Color(0xFF71717A)     // Grey for inactive/unknown
     }
 }

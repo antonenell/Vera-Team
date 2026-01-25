@@ -99,13 +99,22 @@ export const useTrackFlags = (isAdmin: boolean, selectedTrack: TrackName) => {
 
   const updateFlagColor = useCallback(
     async (flagId: number, color: FlagColor) => {
-      if (!isAdmin) return;
+      if (!isAdmin) {
+        console.error("updateFlagColor: Not admin, aborting");
+        return;
+      }
 
       const flagIdStr = String(flagId);
       const now = new Date().toISOString();
 
+      console.log("updateFlagColor called:", { flagId, color, selectedTrack, isAdmin });
+
+      // Check current auth state
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log("Current user:", user?.id, user?.email);
+
       // Upsert the flag
-      await supabase.from("track_flags").upsert(
+      const { data, error } = await supabase.from("track_flags").upsert(
         {
           track_id: selectedTrack,
           flag_id: flagIdStr,
@@ -115,7 +124,16 @@ export const useTrackFlags = (isAdmin: boolean, selectedTrack: TrackName) => {
         {
           onConflict: "track_id,flag_id",
         }
-      );
+      ).select();
+
+      if (error) {
+        console.error("Error updating flag:", error);
+        console.error("Error code:", error.code);
+        console.error("Error message:", error.message);
+        console.error("Error details:", error.details);
+      } else {
+        console.log("Flag updated successfully:", data);
+      }
     },
     [isAdmin, selectedTrack]
   );

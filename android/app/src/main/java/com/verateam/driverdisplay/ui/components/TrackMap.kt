@@ -1,30 +1,34 @@
 package com.verateam.driverdisplay.ui.components
 
+import android.content.Context
 import android.util.Log
+import android.view.Gravity
+import android.view.View
+import android.widget.FrameLayout
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.mapbox.geojson.Point
 import com.mapbox.maps.CameraOptions
 import com.mapbox.maps.MapView
-import com.mapbox.maps.MapboxExperimental
-import com.mapbox.maps.Style
 import com.mapbox.maps.plugin.annotation.annotations
-import com.mapbox.maps.plugin.annotation.generated.CircleAnnotation
-import com.mapbox.maps.plugin.annotation.generated.CircleAnnotationManager
-import com.mapbox.maps.plugin.annotation.generated.CircleAnnotationOptions
-import com.mapbox.maps.plugin.annotation.generated.createCircleAnnotationManager
-import com.verateam.driverdisplay.R
-import com.verateam.driverdisplay.ui.theme.MutedForeground
-import com.verateam.driverdisplay.ui.theme.RacingGreen
+import com.mapbox.maps.plugin.annotation.generated.PointAnnotation
+import com.mapbox.maps.plugin.annotation.generated.PointAnnotationManager
+import com.mapbox.maps.plugin.annotation.generated.PointAnnotationOptions
+import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
+import com.mapbox.maps.plugin.attribution.attribution
+import com.mapbox.maps.plugin.compass.compass
+import com.mapbox.maps.plugin.logo.logo
+import com.mapbox.maps.plugin.scalebar.scalebar
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 
 private const val TAG = "TrackMap"
 
@@ -67,6 +71,26 @@ val tracks = mapOf(
     )
 )
 
+// Create a circular bitmap marker
+private fun createCircleBitmap(color: Int, size: Int, strokeColor: Int = android.graphics.Color.WHITE, strokeWidth: Float = 4f): Bitmap {
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    // Draw fill
+    paint.style = Paint.Style.FILL
+    paint.color = color
+    canvas.drawCircle(size / 2f, size / 2f, (size - strokeWidth) / 2f, paint)
+
+    // Draw stroke
+    paint.style = Paint.Style.STROKE
+    paint.color = strokeColor
+    paint.strokeWidth = strokeWidth
+    canvas.drawCircle(size / 2f, size / 2f, (size - strokeWidth) / 2f, paint)
+
+    return bitmap
+}
+
 @Composable
 fun TrackMap(
     latitude: Double,
@@ -80,107 +104,103 @@ fun TrackMap(
 
     // State for annotation manager and map
     var mapView by remember { mutableStateOf<MapView?>(null) }
-    var circleAnnotationManager by remember { mutableStateOf<CircleAnnotationManager?>(null) }
-    var carAnnotation by remember { mutableStateOf<CircleAnnotation?>(null) }
+    var pointAnnotationManager by remember { mutableStateOf<PointAnnotationManager?>(null) }
+    var carAnnotation by remember { mutableStateOf<PointAnnotation?>(null) }
+    var flagAnnotations by remember { mutableStateOf<List<PointAnnotation>>(emptyList()) }
     var isMapReady by remember { mutableStateOf(false) }
 
-    Panel(
+    // Colors matching the web app exactly
+    val yellowColor = Color(0xFFEAB308).toArgb()
+    val redColor = Color(0xFFDC2626).toArgb()
+    val blackColor = Color(0xFF1A1A1A).toArgb()
+    val greyColor = Color(0xFF71717A).toArgb()
+    val greenColor = Color(0xFF22C55E).toArgb()
+
+    Box(
         modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
     ) {
-        Column(
+        AndroidView(
+            factory = { context ->
+                MapView(context).apply {
+                    mapView = this
+
+                    // Hide logo, attribution, compass, and scalebar
+                    logo.enabled = false
+                    attribution.enabled = false
+                    compass.enabled = false
+                    scalebar.enabled = false
+
+                    // Set camera FIRST before loading style
+                    mapboxMap.setCamera(
+                        CameraOptions.Builder()
+                            .center(Point.fromLngLat(track.center.first, track.center.second))
+                            .zoom(track.zoom)
+                            .build()
+                    )
+
+                    Log.d(TAG, "Loading style: $MAPBOX_STYLE_URL")
+                    Log.d(TAG, "Camera center: ${track.center}, zoom: ${track.zoom}")
+
+                    // Load the style
+                    mapboxMap.loadStyle(MAPBOX_STYLE_URL) { style ->
+                        Log.d(TAG, "Style loaded successfully")
+
+                        // Set camera again after style loads to ensure it sticks
+                        mapboxMap.setCamera(
+                            CameraOptions.Builder()
+                                .center(Point.fromLngLat(track.center.first, track.center.second))
+                                .zoom(track.zoom)
+                                .build()
+                        )
+
+                        // Create point annotation manager
+                        pointAnnotationManager = annotations.createPointAnnotationManager()
+                        isMapReady = true
+                    }
+                }
+            },
             modifier = Modifier.fillMaxSize()
-        ) {
-            // Header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = track.name,
-                    color = MutedForeground,
-                    fontSize = 12.sp
-                )
-                Text(
-                    text = if (isCarOnline) "LIVE" else "OFFLINE",
-                    color = if (isCarOnline) RacingGreen else MutedForeground,
-                    fontSize = 10.sp
-                )
+        )
+    }
+
+    // Add flag markers when map is ready
+    LaunchedEffect(isMapReady, flags) {
+        if (!isMapReady) return@LaunchedEffect
+        val manager = pointAnnotationManager ?: return@LaunchedEffect
+
+        // Remove old flag annotations
+        flagAnnotations.forEach { manager.delete(it) }
+        flagAnnotations = emptyList()
+
+        // Add flag markers
+        val newFlagAnnotations = mutableListOf<PointAnnotation>()
+        track.flags.forEach { flagPos ->
+            val flagColor = flags[flagPos.id.toString()] ?: ""
+            val color = when (flagColor) {
+                "yellow" -> yellowColor
+                "red" -> redColor
+                "black" -> blackColor
+                else -> greyColor
             }
 
-            // Map container
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 8.dp)
-                    .clip(RoundedCornerShape(8.dp))
-            ) {
-                AndroidView(
-                    factory = { context ->
-                        MapView(context).apply {
-                            mapView = this
+            Log.d(TAG, "Flag ${flagPos.id}: flagColor='$flagColor', color=$color")
 
-                            // Set camera FIRST before loading style
-                            mapboxMap.setCamera(
-                                CameraOptions.Builder()
-                                    .center(Point.fromLngLat(track.center.first, track.center.second))
-                                    .zoom(track.zoom)
-                                    .build()
-                            )
+            val bitmap = createCircleBitmap(color, 40)
 
-                            Log.d(TAG, "Loading style: $MAPBOX_STYLE_URL")
-                            Log.d(TAG, "Camera center: ${track.center}, zoom: ${track.zoom}")
+            val pointAnnotationOptions = PointAnnotationOptions()
+                .withPoint(Point.fromLngLat(flagPos.coords.first, flagPos.coords.second))
+                .withIconImage(bitmap)
 
-                            // Load the style
-                            mapboxMap.loadStyle(MAPBOX_STYLE_URL) { style ->
-                                Log.d(TAG, "Style loaded successfully")
-
-                                // Set camera again after style loads to ensure it sticks
-                                mapboxMap.setCamera(
-                                    CameraOptions.Builder()
-                                        .center(Point.fromLngLat(track.center.first, track.center.second))
-                                        .zoom(track.zoom)
-                                        .build()
-                                )
-
-                                // Create annotation manager
-                                circleAnnotationManager = annotations.createCircleAnnotationManager()
-                                isMapReady = true
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-
-            // Coordinates footer
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Lat: ${if (latitude != 0.0) String.format("%.5f", latitude) else "--"}",
-                    color = MutedForeground,
-                    fontSize = 10.sp
-                )
-                Text(
-                    text = "Lng: ${if (longitude != 0.0) String.format("%.5f", longitude) else "--"}",
-                    color = MutedForeground,
-                    fontSize = 10.sp
-                )
-            }
+            newFlagAnnotations.add(manager.create(pointAnnotationOptions))
         }
+        flagAnnotations = newFlagAnnotations
     }
 
     // Update car marker when position changes
     LaunchedEffect(isMapReady, isCarOnline, latitude, longitude) {
         if (!isMapReady) return@LaunchedEffect
-        val manager = circleAnnotationManager ?: return@LaunchedEffect
+        val manager = pointAnnotationManager ?: return@LaunchedEffect
 
         // Remove old car annotation
         carAnnotation?.let {
@@ -190,14 +210,13 @@ fun TrackMap(
 
         // Add new car marker if online and has valid position
         if (isCarOnline && latitude != 0.0 && longitude != 0.0) {
-            val circleAnnotationOptions = CircleAnnotationOptions()
-                .withPoint(Point.fromLngLat(longitude, latitude))
-                .withCircleRadius(8.0)
-                .withCircleColor("#22C55E")
-                .withCircleStrokeWidth(2.0)
-                .withCircleStrokeColor("#FFFFFF")
+            val bitmap = createCircleBitmap(greenColor, 32)
 
-            carAnnotation = manager.create(circleAnnotationOptions)
+            val pointAnnotationOptions = PointAnnotationOptions()
+                .withPoint(Point.fromLngLat(longitude, latitude))
+                .withIconImage(bitmap)
+
+            carAnnotation = manager.create(pointAnnotationOptions)
         }
     }
 

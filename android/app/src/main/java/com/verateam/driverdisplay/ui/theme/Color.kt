@@ -2,10 +2,10 @@ package com.verateam.driverdisplay.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Racing colors matching the inspiration design
+// Racing colors matching the web app
 val RacingGreen = Color(0xFF22C55E)
-val RacingRed = Color(0xFFEF4444)
-val RacingYellow = Color(0xFFF59E0B)
+val RacingRed = Color(0xFFDC2626)      // Matches web #DC2626
+val RacingYellow = Color(0xFFEAB308)   // Matches web #EAB308
 val RacingBlue = Color(0xFF0EA5E9)
 
 // Dark theme colors

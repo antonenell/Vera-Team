@@ -42,16 +42,34 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
   const map = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const carMarkerRef = useRef<mapboxgl.Marker | null>(null);
-  
+  const isAdminRef = useRef(isAdmin);
+  const updateFlagColorRef = useRef<(flagId: number, color: FlagColor) => void>(() => {});
+  const getFlagColorRef = useRef<(flagId: number) => FlagColor>(() => "grey");
+  const markersCreatedRef = useRef(false);
+
+  // Keep ref in sync with prop
+  useEffect(() => {
+    isAdminRef.current = isAdmin;
+  }, [isAdmin]);
+
   // Use the real-time synced flags hook
-  const { getFlagColor, updateFlagColor, resetFlags } = useTrackFlags(isAdmin, selectedTrack);
+  const { flags, getFlagColor, updateFlagColor, resetFlags } = useTrackFlags(isAdmin, selectedTrack);
+
+  // Keep refs in sync
+  useEffect(() => {
+    updateFlagColorRef.current = updateFlagColor;
+  }, [updateFlagColor]);
+
+  useEffect(() => {
+    getFlagColorRef.current = getFlagColor;
+  }, [getFlagColor]);
 
   // Initialize map
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
 
     mapboxgl.accessToken = MAPBOX_TOKEN;
-    
+
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: "mapbox://styles/carlberge/cmj42ghcf009601r47hgyaiku/draft",
@@ -65,7 +83,7 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
       map.current?.resize();
       map.current?.fitBounds(track.bounds, { padding: 20 });
     });
-    
+
     resizeObserver.observe(mapContainer.current);
 
     // Create car marker - hidden by default until online
@@ -127,24 +145,27 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
     }
   };
 
-  // Update markers when flags or track changes
+  // Store marker elements for color updates
+  const markerElementsRef = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  // Create markers only when track changes (not when flags change)
   useEffect(() => {
     if (!map.current) return;
 
     // Remove existing markers
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
+    markerElementsRef.current.clear();
 
     const currentFlags = track.defaultFlags;
 
     // Add new markers for current track
     currentFlags.forEach((flag) => {
-      const color = getFlagColor(flag.id);
-      
       const el = document.createElement("div");
       el.className = "flag-marker";
+      el.dataset.flagId = String(flag.id);
       el.style.cssText = `
-        cursor: ${isAdmin ? 'pointer' : 'default'};
+        cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -157,79 +178,97 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
         border-radius: 12px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
       `;
-      el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${getFlagColorHex(color)}" stroke="${getFlagColorHex(color)}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
-      
+      // Initial color - will be updated by separate effect
+      el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#71717A" stroke="#71717A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
+
+      markerElementsRef.current.set(flag.id, el);
+
       const marker = new mapboxgl.Marker({ element: el })
         .setLngLat(flag.coords)
         .addTo(map.current!);
-      
-      // Create popup for color selection
-      const popupContent = document.createElement("div");
-      popupContent.style.cssText = `
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        padding: 8px;
-      `;
-      
-      const colors: { color: FlagColor; label: string }[] = [
-        { color: "grey", label: "Neutral" },
-        { color: "yellow", label: "Caution" },
-        { color: "red", label: "Danger" },
-        { color: "black", label: "Disqualified" },
-      ];
-      
-      colors.forEach(({ color: colorOption, label }) => {
-        const btn = document.createElement("button");
-        btn.style.cssText = `
+
+      // Add click listener - creates popup dynamically with current state
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!isAdminRef.current) {
+          console.log("Not admin, ignoring flag click");
+          return;
+        }
+
+        // Create popup dynamically so it has current color
+        const popupContent = document.createElement("div");
+        popupContent.style.cssText = `
           display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 6px 12px;
-          background: ${color === colorOption ? 'hsl(217.2 32.6% 17.5%)' : 'transparent'};
-          border: none;
-          border-radius: 4px;
-          color: hsl(210 40% 98%);
-          font-size: 12px;
-          cursor: pointer;
-          transition: background 0.2s;
+          flex-direction: column;
+          gap: 4px;
+          padding: 8px;
         `;
-        btn.innerHTML = `
-          <span style="width: 12px; height: 12px; border-radius: 50%; background: ${getFlagColorHex(colorOption)}; border: 1px solid rgba(255,255,255,0.2);"></span>
-          ${label}
-        `;
-        btn.addEventListener("mouseenter", () => {
-          btn.style.background = "hsl(217.2 32.6% 17.5%)";
+
+        const colors: { color: FlagColor; label: string }[] = [
+          { color: "grey", label: "Neutral" },
+          { color: "yellow", label: "Caution" },
+          { color: "red", label: "Danger" },
+          { color: "black", label: "Disqualified" },
+        ];
+
+        colors.forEach(({ color: colorOption, label }) => {
+          const btn = document.createElement("button");
+          btn.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: transparent;
+            border: none;
+            border-radius: 4px;
+            color: hsl(210 40% 98%);
+            font-size: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+          `;
+          btn.innerHTML = `
+            <span style="width: 12px; height: 12px; border-radius: 50%; background: ${getFlagColorHex(colorOption)}; border: 1px solid rgba(255,255,255,0.2);"></span>
+            ${label}
+          `;
+          btn.addEventListener("mouseenter", () => {
+            btn.style.background = "hsl(217.2 32.6% 17.5%)";
+          });
+          btn.addEventListener("mouseleave", () => {
+            btn.style.background = "transparent";
+          });
+          btn.addEventListener("click", (clickE) => {
+            clickE.stopPropagation();
+            updateFlagColorRef.current(flag.id, colorOption);
+            popup.remove();
+          });
+          popupContent.appendChild(btn);
         });
-        btn.addEventListener("mouseleave", () => {
-          btn.style.background = color === colorOption ? "hsl(217.2 32.6% 17.5%)" : "transparent";
-        });
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          updateFlagColor(flag.id, colorOption);
-          popup.remove();
-        });
-        popupContent.appendChild(btn);
+
+        const popup = new mapboxgl.Popup({
+          closeButton: false,
+          closeOnClick: true,
+          offset: 15,
+          className: "flag-popup-custom",
+        }).setDOMContent(popupContent);
+
+        popup.setLngLat(flag.coords).addTo(map.current!);
       });
-      
-      const popup = new mapboxgl.Popup({
-        closeButton: false,
-        closeOnClick: true,
-        offset: 15,
-        className: "flag-popup-custom",
-      }).setDOMContent(popupContent);
-      
-      // Only allow click interaction for admins
-      if (isAdmin) {
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          popup.setLngLat(flag.coords).addTo(map.current!);
-        });
-      }
-      
+
       markersRef.current.push(marker);
     });
-  }, [selectedTrack, isAdmin, getFlagColor, updateFlagColor]);
+  }, [selectedTrack, track.defaultFlags]);
+
+  // Update marker colors when flags change (without recreating markers)
+  useEffect(() => {
+    track.defaultFlags.forEach((flag) => {
+      const el = markerElementsRef.current.get(flag.id);
+      if (el) {
+        const color = getFlagColor(flag.id);
+        const hexColor = getFlagColorHex(color);
+        el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${hexColor}" stroke="${hexColor}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
+      }
+    });
+  }, [flags, getFlagColor, track.defaultFlags]);
 
   // Update map when track changes
   useEffect(() => {
@@ -308,12 +347,12 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
         <div className="flex items-center gap-3 justify-center">
           {(["grey", "yellow", "red", "black"] as FlagColor[]).map((color) => (
             <div key={color} className="flex items-center gap-1.5">
-              <Flag 
-                className="w-4 h-4" 
-                style={{ 
-                  fill: flagColors[color], 
-                  color: flagColors[color] 
-                }} 
+              <Flag
+                className="w-4 h-4"
+                style={{
+                  fill: flagColors[color],
+                  color: flagColors[color]
+                }}
               />
               <span className="text-xs text-muted-foreground">{flagLabels[color]}</span>
             </div>

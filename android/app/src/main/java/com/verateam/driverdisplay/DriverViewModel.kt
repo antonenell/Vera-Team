@@ -76,11 +76,19 @@ class DriverViewModel : ViewModel() {
     // Polling job
     private var pollingJob: Job? = null
 
+    // Flags polling job
+    private var flagsPollingJob: Job? = null
+
+    // GPS polling job
+    private var gpsPollingJob: Job? = null
+
     companion object {
         private const val TAG = "DriverViewModel"
         private const val POLL_INTERVAL_MS = 3000L  // Poll server every 3 seconds for state changes
         private const val TIMER_UPDATE_INTERVAL_MS = 100L  // Update timer display every 100ms
         private const val CLOCK_SYNC_ATTEMPTS = 3
+        private const val FLAGS_POLL_INTERVAL_MS = 1000L  // Poll flags every 1 second
+        private const val GPS_POLL_INTERVAL_MS = 500L  // Poll GPS every 500ms
     }
 
     init {
@@ -115,6 +123,12 @@ class DriverViewModel : ViewModel() {
 
             // Step 5: Start polling
             startPolling()
+
+            // Step 6: Start flags polling
+            startFlagsPolling()
+
+            // Step 7: Start GPS polling
+            startGpsPolling()
         }
     }
 
@@ -286,6 +300,48 @@ class DriverViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Poll flags continuously for real-time updates from web app.
+     */
+    private fun startFlagsPolling() {
+        flagsPollingJob?.cancel()
+        flagsPollingJob = viewModelScope.launch {
+            while (isActive) {
+                try {
+                    val flags = repository.fetchTrackFlags(_uiState.value.selectedTrack)
+                    _uiState.value = _uiState.value.copy(flags = flags)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Flags polling error: ${e.message}")
+                }
+                delay(FLAGS_POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    /**
+     * Poll GPS telemetry from Supabase for real-time location updates.
+     */
+    private fun startGpsPolling() {
+        gpsPollingJob?.cancel()
+        gpsPollingJob = viewModelScope.launch {
+            while (isActive) {
+                try {
+                    val telemetry = repository.fetchGpsTelemetry()
+                    if (telemetry != null) {
+                        _uiState.value = _uiState.value.copy(
+                            latitude = telemetry.latitude,
+                            longitude = telemetry.longitude,
+                            speed = telemetry.speed
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "GPS polling error: ${e.message}")
+                }
+                delay(GPS_POLL_INTERVAL_MS)
+            }
+        }
+    }
+
     // Called by LocationService
     fun updateGpsData(latitude: Double, longitude: Double, speed: Double) {
         _uiState.value = _uiState.value.copy(
@@ -317,5 +373,7 @@ class DriverViewModel : ViewModel() {
         super.onCleared()
         timerJob?.cancel()
         pollingJob?.cancel()
+        flagsPollingJob?.cancel()
+        gpsPollingJob?.cancel()
     }
 }

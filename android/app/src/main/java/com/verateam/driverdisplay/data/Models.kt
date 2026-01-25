@@ -28,7 +28,7 @@ data class TrackFlag(
     val id: String? = null,
     @SerialName("track_id") val trackId: String,
     @SerialName("flag_id") val flagId: String,
-    val color: String = "grey",
+    val color: String? = "grey",
     @SerialName("updated_at") val updatedAt: String? = null
 )
 

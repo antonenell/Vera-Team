@@ -23,18 +23,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   const checkAdminRole = async (userId: string) => {
+    console.log('checkAdminRole called for userId:', userId);
     const { data, error } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId)
-      .eq('role', 'admin')
-      .maybeSingle();
-    
+      .rpc('has_role', { _user_id: userId, _role: 'admin' });
+
+    console.log('has_role result:', data, 'error:', error);
     if (error) {
       console.error('Error checking admin role:', error);
       return false;
     }
-    return !!data;
+    console.log('Setting isAdmin to:', data === true);
+    return data === true;
   };
 
   useEffect(() => {
