@@ -1,18 +1,20 @@
 package com.verateam.driverdisplay.ui.components
 
-import android.content.Context
 import android.util.Log
-import android.view.Gravity
-import android.view.View
-import android.widget.FrameLayout
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.mapbox.geojson.Point
 import com.mapbox.maps.CameraOptions
@@ -29,6 +31,7 @@ import com.mapbox.maps.plugin.scalebar.scalebar
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import com.verateam.driverdisplay.ui.theme.*
 
 private const val TAG = "TrackMap"
 
@@ -100,7 +103,11 @@ fun TrackMap(
     selectedTrack: String = "stora-holm",
     modifier: Modifier = Modifier
 ) {
-    val track = tracks[selectedTrack] ?: tracks["stora-holm"]!!
+    // Internal track selection state
+    var currentTrack by remember { mutableStateOf(selectedTrack) }
+    var dropdownExpanded by remember { mutableStateOf(false) }
+
+    val track = tracks[currentTrack] ?: tracks["stora-holm"]!!
 
     // State for annotation manager and map
     var mapView by remember { mutableStateOf<MapView?>(null) }
@@ -116,56 +123,138 @@ fun TrackMap(
     val greyColor = Color(0xFF71717A).toArgb()
     val greenColor = Color(0xFF22C55E).toArgb()
 
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-    ) {
-        AndroidView(
-            factory = { context ->
-                MapView(context).apply {
-                    mapView = this
-
-                    // Hide logo, attribution, compass, and scalebar
-                    logo.enabled = false
-                    attribution.enabled = false
-                    compass.enabled = false
-                    scalebar.enabled = false
-
-                    // Set camera FIRST before loading style
-                    mapboxMap.setCamera(
-                        CameraOptions.Builder()
-                            .center(Point.fromLngLat(track.center.first, track.center.second))
-                            .zoom(track.zoom)
-                            .build()
-                    )
-
-                    Log.d(TAG, "Loading style: $MAPBOX_STYLE_URL")
-                    Log.d(TAG, "Camera center: ${track.center}, zoom: ${track.zoom}")
-
-                    // Load the style
-                    mapboxMap.loadStyle(MAPBOX_STYLE_URL) { style ->
-                        Log.d(TAG, "Style loaded successfully")
-
-                        // Set camera again after style loads to ensure it sticks
-                        mapboxMap.setCamera(
-                            CameraOptions.Builder()
-                                .center(Point.fromLngLat(track.center.first, track.center.second))
-                                .zoom(track.zoom)
-                                .build()
-                        )
-
-                        // Create point annotation manager
-                        pointAnnotationManager = annotations.createPointAnnotationManager()
-                        isMapReady = true
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxSize()
+    // Update camera when track changes
+    LaunchedEffect(currentTrack) {
+        mapView?.mapboxMap?.setCamera(
+            CameraOptions.Builder()
+                .center(Point.fromLngLat(track.center.first, track.center.second))
+                .zoom(track.zoom)
+                .build()
         )
     }
 
-    // Add flag markers when map is ready
-    LaunchedEffect(isMapReady, flags) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(PanelBackground)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Track selector header
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(PanelBackground)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { dropdownExpanded = true }
+                ) {
+                    // Green map pin indicator
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(RacingGreen)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = track.name,
+                        color = OnSurfaceVariant,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 0.5.sp
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "▼",
+                        color = OnSurfaceVariant,
+                        fontSize = 8.sp
+                    )
+
+                    // Dropdown menu
+                    DropdownMenu(
+                        expanded = dropdownExpanded,
+                        onDismissRequest = { dropdownExpanded = false },
+                        modifier = Modifier.background(Surface)
+                    ) {
+                        tracks.forEach { (key, trackConfig) ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = trackConfig.name,
+                                        color = if (key == currentTrack) RacingGreen else OnSurface,
+                                        fontSize = 12.sp
+                                    )
+                                },
+                                onClick = {
+                                    currentTrack = key
+                                    dropdownExpanded = false
+                                },
+                                modifier = Modifier.background(
+                                    if (key == currentTrack) SurfaceVariant else Color.Transparent
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Map view
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp))
+            ) {
+                AndroidView(
+                    factory = { context ->
+                        MapView(context).apply {
+                            mapView = this
+
+                            // Hide logo, attribution, compass, and scalebar
+                            logo.enabled = false
+                            attribution.enabled = false
+                            compass.enabled = false
+                            scalebar.enabled = false
+
+                            // Set camera FIRST before loading style
+                            mapboxMap.setCamera(
+                                CameraOptions.Builder()
+                                    .center(Point.fromLngLat(track.center.first, track.center.second))
+                                    .zoom(track.zoom)
+                                    .build()
+                            )
+
+                            Log.d(TAG, "Loading style: $MAPBOX_STYLE_URL")
+                            Log.d(TAG, "Camera center: ${track.center}, zoom: ${track.zoom}")
+
+                            // Load the style
+                            mapboxMap.loadStyle(MAPBOX_STYLE_URL) { style ->
+                                Log.d(TAG, "Style loaded successfully")
+
+                                // Set camera again after style loads to ensure it sticks
+                                mapboxMap.setCamera(
+                                    CameraOptions.Builder()
+                                        .center(Point.fromLngLat(track.center.first, track.center.second))
+                                        .zoom(track.zoom)
+                                        .build()
+                                )
+
+                                // Create point annotation manager
+                                pointAnnotationManager = annotations.createPointAnnotationManager()
+                                isMapReady = true
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
+
+    // Add flag markers when map is ready or track changes
+    LaunchedEffect(isMapReady, flags, currentTrack) {
         if (!isMapReady) return@LaunchedEffect
         val manager = pointAnnotationManager ?: return@LaunchedEffect
 
@@ -173,7 +262,7 @@ fun TrackMap(
         flagAnnotations.forEach { manager.delete(it) }
         flagAnnotations = emptyList()
 
-        // Add flag markers
+        // Add flag markers for current track
         val newFlagAnnotations = mutableListOf<PointAnnotation>()
         track.flags.forEach { flagPos ->
             val flagColor = flags[flagPos.id.toString()] ?: ""
