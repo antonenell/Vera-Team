@@ -23,6 +23,7 @@ const Index = () => {
   const {
     timeLeft,
     isRunning,
+    isPaused,
     currentLap,
     lapTimes,
     currentLapElapsed,
@@ -153,6 +154,7 @@ const Index = () => {
           timeLeftSeconds={timeLeft}
           totalSeconds={RACE_DURATION_SECONDS}
           isRunning={isRunning}
+          isPaused={isPaused}
           onStartStop={startStop}
           onLap={recordLap}
           onReset={reset}

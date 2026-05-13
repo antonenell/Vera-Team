@@ -14,6 +14,7 @@ data class RaceState(
     val id: String = "00000000-0000-0000-0000-000000000001",
     @SerialName("is_running") val isRunning: Boolean = false,
     @SerialName("started_at_ms") val startedAtMs: Long? = null,  // Server timestamp when race started
+    @SerialName("paused_at_ms") val pausedAtMs: Long? = null,  // Server timestamp when race was paused (null while running or idle)
     @SerialName("paused_offset_ms") val pausedOffsetMs: Long = 0,  // Accumulated pause time
     @SerialName("start_time") val startTime: String? = null,  // Legacy field
     @SerialName("elapsed_seconds") val elapsedSeconds: Int = 0,  // Legacy field

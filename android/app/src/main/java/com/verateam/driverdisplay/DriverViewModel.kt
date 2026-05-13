@@ -239,15 +239,18 @@ class DriverViewModel : ViewModel() {
         timerJob?.cancel()
 
         if (raceState.isRunning && raceState.startedAtMs != null) {
-            // Start local timer loop - recalculates every 100ms
+            // Running: keep the local timer loop ticking
             timerJob = viewModelScope.launch {
                 while (isActive) {
                     calculateAndUpdateTime()
                     delay(TIMER_UPDATE_INTERVAL_MS)
                 }
             }
+        } else if (raceState.startedAtMs != null) {
+            // Paused: render the frozen time once, no loop
+            calculateAndUpdateTime()
         } else {
-            // Race not running - show full time
+            // Idle (never started or reset): show full time
             _uiState.value = _uiState.value.copy(
                 timeLeftSeconds = raceState.totalRaceTime,
                 currentLapElapsed = 0
@@ -259,17 +262,22 @@ class DriverViewModel : ViewModel() {
      * Calculate time using the authoritative formula.
      * Called every 100ms - always recalculates from timestamps, never increments.
      *
-     * Formula: remainingMs = durationMs - (correctedNow - startedAtMs - pausedOffsetMs)
+     * Formula: remainingMs = durationMs - (referenceNow - startedAtMs - pausedOffsetMs)
+     * referenceNow = correctedNow while running; pausedAtMs while paused.
      */
     private fun calculateAndUpdateTime() {
         val raceState = currentRaceState ?: return
         val startedAtMs = raceState.startedAtMs ?: return
 
-        // Get server-corrected current time
-        val correctedNow = System.currentTimeMillis() + clockOffset
+        // While paused, freeze the reference at the pause timestamp so the timer doesn't tick down.
+        val referenceNow = if (raceState.isRunning) {
+            System.currentTimeMillis() + clockOffset
+        } else {
+            raceState.pausedAtMs ?: startedAtMs
+        }
 
         // Calculate elapsed time from server timestamp (in milliseconds)
-        val elapsedMs = correctedNow - startedAtMs - raceState.pausedOffsetMs
+        val elapsedMs = referenceNow - startedAtMs - raceState.pausedOffsetMs
 
         // Calculate remaining time (in milliseconds)
         val totalRaceTimeMs = raceState.totalRaceTime * 1000L

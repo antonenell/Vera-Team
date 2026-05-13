@@ -6,6 +6,7 @@ interface RaceTimerProps {
   timeLeftSeconds: number;
   totalSeconds: number;
   isRunning: boolean;
+  isPaused: boolean;
   onStartStop: () => void;
   onLap: () => void;
   onReset: () => void;
@@ -21,10 +22,11 @@ const formatTime = (seconds: number): string => {
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 };
 
-const RaceTimer = ({ 
-  timeLeftSeconds, 
-  totalSeconds, 
+const RaceTimer = ({
+  timeLeftSeconds,
+  totalSeconds,
   isRunning,
+  isPaused,
   onStartStop,
   onLap,
   onReset,
@@ -76,7 +78,12 @@ const RaceTimer = ({
               {isRunning ? (
                 <>
                   <Pause className="w-4 h-4" />
-                  Stop
+                  Pause
+                </>
+              ) : isPaused ? (
+                <>
+                  <Play className="w-4 h-4" />
+                  Resume
                 </>
               ) : (
                 <>

@@ -24,6 +24,7 @@ const TOTAL_RACE_TIME_MS = 35 * 60 * 1000; // 35 minutes in milliseconds
 interface RaceState {
   isRunning: boolean;
   startedAtMs: number | null;
+  pausedAtMs: number | null;
   pausedOffsetMs: number;
   lapTimes: number[];
   totalRaceTimeMs: number;
@@ -33,6 +34,7 @@ interface DbRaceState {
   id: string;
   is_running: boolean;
   started_at_ms: number | null;
+  paused_at_ms: number | null;
   paused_offset_ms: number;
   elapsed_seconds: number;
   start_time: string | null;
@@ -101,6 +103,7 @@ export const useRaceState = (isAdmin: boolean) => {
   const raceStateRef = useRef<RaceState>({
     isRunning: false,
     startedAtMs: null,
+    pausedAtMs: null,
     pausedOffsetMs: 0,
     lapTimes: [],
     totalRaceTimeMs: TOTAL_RACE_TIME_MS,
@@ -123,12 +126,17 @@ export const useRaceState = (isAdmin: boolean) => {
    */
   const getRemainingMs = useCallback((): number => {
     const state = raceStateRef.current;
-    if (!state.isRunning || state.startedAtMs === null) {
+    if (state.startedAtMs === null) {
+      // Idle: full duration shown
       return state.totalRaceTimeMs;
     }
 
-    const correctedNow = Date.now() + clockOffsetRef.current;
-    const elapsedMs = correctedNow - state.startedAtMs - state.pausedOffsetMs;
+    // While paused we freeze "now" at the pause timestamp so the timer doesn't tick down.
+    const referenceNow = state.isRunning
+      ? Date.now() + clockOffsetRef.current
+      : state.pausedAtMs ?? state.startedAtMs;
+
+    const elapsedMs = referenceNow - state.startedAtMs - state.pausedOffsetMs;
     const remainingMs = state.totalRaceTimeMs - elapsedMs;
 
     return Math.max(0, remainingMs);
@@ -139,12 +147,15 @@ export const useRaceState = (isAdmin: boolean) => {
    */
   const getElapsedMs = useCallback((): number => {
     const state = raceStateRef.current;
-    if (!state.isRunning || state.startedAtMs === null) {
+    if (state.startedAtMs === null) {
       return 0;
     }
 
-    const correctedNow = Date.now() + clockOffsetRef.current;
-    const elapsedMs = correctedNow - state.startedAtMs - state.pausedOffsetMs;
+    const referenceNow = state.isRunning
+      ? Date.now() + clockOffsetRef.current
+      : state.pausedAtMs ?? state.startedAtMs;
+
+    const elapsedMs = referenceNow - state.startedAtMs - state.pausedOffsetMs;
 
     return Math.max(0, elapsedMs);
   }, []);
@@ -169,6 +180,7 @@ export const useRaceState = (isAdmin: boolean) => {
     raceStateRef.current = {
       isRunning: dbData.is_running,
       startedAtMs: dbData.started_at_ms,
+      pausedAtMs: dbData.paused_at_ms ?? null,
       pausedOffsetMs: dbData.paused_offset_ms ?? 0,
       lapTimes: lapTimesArray,
       totalRaceTimeMs: dbData.total_race_time * 1000,
@@ -341,29 +353,43 @@ export const useRaceState = (isAdmin: boolean) => {
   const startStop = useCallback(async () => {
     if (!isAdmin) return;
 
-    const newIsRunning = !raceStateRef.current.isRunning;
+    const state = raceStateRef.current;
+    const { data: serverTimeMs } = await supabase.rpc("get_server_time_ms");
+    const nowMs = Number(serverTimeMs);
 
-    if (newIsRunning) {
-      // Get server time for start timestamp
-      const { data: serverTimeMs } = await supabase.rpc("get_server_time_ms");
-
-      await supabase
-        .from("race_state")
-        .update({
-          is_running: true,
-          started_at_ms: Number(serverTimeMs),
-          paused_offset_ms: 0,
-          elapsed_seconds: 0,
-          lap_times: [],
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", RACE_STATE_ID);
-    } else {
+    if (state.isRunning) {
+      // Running → Pause: freeze the timer at this server timestamp.
       await supabase
         .from("race_state")
         .update({
           is_running: false,
-          started_at_ms: null,
+          paused_at_ms: nowMs,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", RACE_STATE_ID);
+    } else if (state.startedAtMs !== null && state.pausedAtMs !== null) {
+      // Paused → Resume: add the pause duration to the accumulated offset.
+      const pauseDuration = nowMs - state.pausedAtMs;
+      await supabase
+        .from("race_state")
+        .update({
+          is_running: true,
+          paused_at_ms: null,
+          paused_offset_ms: state.pausedOffsetMs + pauseDuration,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", RACE_STATE_ID);
+    } else {
+      // Idle → Start: fresh race from zero.
+      await supabase
+        .from("race_state")
+        .update({
+          is_running: true,
+          started_at_ms: nowMs,
+          paused_at_ms: null,
+          paused_offset_ms: 0,
+          elapsed_seconds: 0,
+          lap_times: [],
           updated_at: new Date().toISOString(),
         })
         .eq("id", RACE_STATE_ID);
@@ -397,6 +423,7 @@ export const useRaceState = (isAdmin: boolean) => {
       .update({
         is_running: false,
         started_at_ms: null,
+        paused_at_ms: null,
         paused_offset_ms: 0,
         elapsed_seconds: 0,
         lap_times: [],
@@ -416,9 +443,12 @@ export const useRaceState = (isAdmin: boolean) => {
   const previousLapsTotal = state.lapTimes.reduce((a, b) => a + b, 0);
   const currentLapElapsed = Math.max(0, elapsedSeconds - previousLapsTotal);
 
+  const isPaused = !state.isRunning && state.startedAtMs !== null;
+
   return {
     timeLeft,
     isRunning: state.isRunning,
+    isPaused,
     currentLap: state.lapTimes.length,
     lapTimes: state.lapTimes,
     currentLapElapsed,
