@@ -5,10 +5,13 @@ import GPSTrack from "@/components/dashboard/GPSTrack";
 import SystemStatus from "@/components/dashboard/SystemStatus";
 import LapTimes from "@/components/dashboard/LapTimes";
 import RaceTimer from "@/components/dashboard/RaceTimer";
+import { VoiceChat } from "@/components/dashboard/VoiceChat";
+import { LiveKitAudioMount } from "@/components/voice/LiveKitAudioMount";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useRaceState } from "@/hooks/useRaceState";
 import { useGpsTelemetry } from "@/hooks/useGpsTelemetry";
+import { useVoiceChat } from "@/hooks/useVoiceChat";
 import chalmersLogo from "@/assets/chalmersverateam.svg";
 
 const TOTAL_LAPS = 11;
@@ -42,6 +45,9 @@ const Index = () => {
     signalStrength,
   } = useGpsTelemetry();
 
+  // Voice chat — single Room instance shared between the card and the audio mount
+  const voice = useVoiceChat();
+
   // Other telemetry data - defaults for when not connected
   const rpm = 0;
   const speed = gpsSpeed; // Use GPS speed from phone
@@ -61,6 +67,7 @@ const Index = () => {
       
       {/* Content */}
       <div className="relative z-10">
+      <LiveKitAudioMount room={voice.room} />
       {/* Header */}
       <header className="mb-8 flex items-center justify-between">
         <img src={chalmersLogo} alt="Chalmers Vera Team" className="h-12 w-auto" />
@@ -171,6 +178,13 @@ const Index = () => {
           totalLaps={TOTAL_LAPS}
           targetLapTime={TARGET_LAP_TIME}
           currentLapElapsed={currentLapElapsed}
+          className="col-span-2 row-span-2"
+        />
+
+        {/* Voice Chat */}
+        <VoiceChat
+          api={voice}
+          isAdmin={isAdmin}
           className="col-span-2 row-span-2"
         />
 
