@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Button
@@ -40,8 +41,21 @@ class MainActivity : ComponentActivity() {
 
     private var hasLocationPermission by mutableStateOf(false)
     private var hasBackgroundPermission by mutableStateOf(false)
+    private var hasMicPermission by mutableStateOf(false)
     private var isBatteryOptimizationDisabled by mutableStateOf(false)
     private var permissionStep by mutableIntStateOf(0) // 0: foreground, 1: background, 2: battery
+
+    // Shared with DriverDisplayScreen via Compose viewModel()
+    private val voiceViewModel: VoiceViewModel by viewModels()
+
+    // Mic permission — non-blocking. If denied, voice chat is disabled but the
+    // rest of the driver display works as normal.
+    private val micPermissionRequest = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasMicPermission = granted
+        voiceViewModel.setMicPermissionGranted(granted)
+    }
 
     // Foreground location permission request
     private val foregroundLocationRequest = registerForActivityResult(
@@ -159,6 +173,15 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // Re-check battery optimization status when returning to app
         checkBatteryOptimization()
+        // Re-check mic permission in case the user toggled it in system settings
+        val micGranted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (micGranted != hasMicPermission) {
+            hasMicPermission = micGranted
+            voiceViewModel.setMicPermissionGranted(micGranted)
+        }
     }
 
     override fun onDestroy() {
@@ -179,6 +202,16 @@ class MainActivity : ComponentActivity() {
             ) == PackageManager.PERMISSION_GRANTED
         } else {
             true // Pre-Android 10 doesn't need this permission
+        }
+
+        hasMicPermission = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        voiceViewModel.setMicPermissionGranted(hasMicPermission)
+        // Ask for mic permission once — non-blocking. User can grant later via app settings.
+        if (!hasMicPermission) {
+            micPermissionRequest.launch(Manifest.permission.RECORD_AUDIO)
         }
 
         checkBatteryOptimization()

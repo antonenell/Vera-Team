@@ -11,19 +11,28 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.verateam.driverdisplay.DriverUiState
 import com.verateam.driverdisplay.DriverViewModel
+import com.verateam.driverdisplay.VoiceViewModel
 import com.verateam.driverdisplay.ui.components.*
 import com.verateam.driverdisplay.ui.theme.Background
 
 @Composable
 fun DriverDisplayScreen(
-    viewModel: DriverViewModel = viewModel()
+    viewModel: DriverViewModel = viewModel(),
+    voiceViewModel: VoiceViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val voiceState by voiceViewModel.state.collectAsState()
+    val hasMicPermission by voiceViewModel.hasMicPermission.collectAsState()
 
     DriverDisplayContent(
         uiState = uiState,
         formatTime = viewModel::formatTime,
-        getBestLapTime = { viewModel.getBestLapTime() }
+        getBestLapTime = { viewModel.getBestLapTime() },
+        voiceState = voiceState,
+        hasMicPermission = hasMicPermission,
+        onVoiceJoin = voiceViewModel::join,
+        onVoiceMuteToggle = voiceViewModel::toggleMute,
+        onVoiceLeave = voiceViewModel::leave,
     )
 }
 
@@ -31,7 +40,13 @@ fun DriverDisplayScreen(
 fun DriverDisplayContent(
     uiState: DriverUiState,
     formatTime: (Int) -> String,
-    @Suppress("UNUSED_PARAMETER") getBestLapTime: () -> Int?
+    @Suppress("UNUSED_PARAMETER") getBestLapTime: () -> Int?,
+    voiceState: com.verateam.driverdisplay.voice.VoiceController.VoiceState =
+        com.verateam.driverdisplay.voice.VoiceController.VoiceState.Idle,
+    hasMicPermission: Boolean = false,
+    onVoiceJoin: () -> Unit = {},
+    onVoiceMuteToggle: () -> Unit = {},
+    onVoiceLeave: () -> Unit = {},
 ) {
     Box(
         modifier = Modifier
@@ -122,6 +137,18 @@ fun DriverDisplayContent(
             isConnected = uiState.isConnected,
             modifier = Modifier
                 .align(Alignment.TopEnd)
+                .padding(4.dp)
+        )
+
+        // Voice chat controls in top left
+        MicButton(
+            state = voiceState,
+            hasMicPermission = hasMicPermission,
+            onJoin = onVoiceJoin,
+            onToggleMute = onVoiceMuteToggle,
+            onLeave = onVoiceLeave,
+            modifier = Modifier
+                .align(Alignment.TopStart)
                 .padding(4.dp)
         )
     }

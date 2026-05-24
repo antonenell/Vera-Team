@@ -14,6 +14,7 @@ playServicesLocation = "21.3.0"
 lifecycleViewmodelCompose = "2.6.1"
 kotlinxSerializationJson = "1.7.3"
 mapbox = "11.8.0"
+livekit = "2.25.3"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -48,6 +49,9 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 
 # Mapbox
 mapbox-maps = { group = "com.mapbox.maps", name = "android", version.ref = "mapbox" }
+
+# LiveKit (voice chat — SFU client)
+livekit-android = { group = "io.livekit", name = "livekit-android", version.ref = "livekit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

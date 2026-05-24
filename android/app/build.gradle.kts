@@ -68,6 +68,9 @@ dependencies {
     // Mapbox Maps
     implementation(libs.mapbox.maps)
 
+    // LiveKit (voice chat)
+    implementation(libs.livekit.android)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
