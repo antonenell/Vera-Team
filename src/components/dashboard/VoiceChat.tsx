@@ -178,10 +178,10 @@ export function VoiceChat({ api, isAdmin, className }: VoiceChatProps) {
           </p>
         )}
 
-        {/* Role hint */}
-        {!isAdmin && isConnected && (
+        {/* Role hint — only shown when the server actually denies publish */}
+        {!canPublish && isConnected && (
           <p className="text-xs text-muted-foreground italic">
-            Som spectator kan du lyssna men inte tala.
+            Du kan lyssna men inte tala.
           </p>
         )}
       </div>

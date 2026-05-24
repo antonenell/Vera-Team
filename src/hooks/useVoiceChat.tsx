@@ -77,18 +77,18 @@ export function useVoiceChat(): VoiceChatApi {
     setState("fetching-token");
 
     try {
-      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
-      if (sessionErr || !sessionData.session) {
-        throw new Error("Not signed in");
-      }
-      const accessToken = sessionData.session.access_token;
+      // Auth is optional — if the user happens to be signed in, send the token
+      // so the server can use their email as the display name. Anonymous joins
+      // are allowed too.
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
       const resp = await fetch("/api/livekit-token", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers,
         body: JSON.stringify({ kind: "web" }),
       });
       if (!resp.ok) {

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { AccessToken } from 'livekit-server-sdk';
 import { createClient } from '@supabase/supabase-js';
-import { timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 
 /**
  * Issues a short-lived LiveKit JWT to either a web client (Supabase-authenticated)
@@ -56,32 +56,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       name = 'Driver';
       canPublish = true;
     } else if (kind === 'web') {
-      if (!bearer) return res.status(401).json({ error: 'Missing Supabase token' });
-      // Reuse the same Supabase URL + anon key the frontend already uses.
-      const supabaseUrl = process.env.VITE_SUPABASE_URL;
-      const supabaseAnonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-      if (!supabaseUrl || !supabaseAnonKey) {
-        return res.status(500).json({ error: 'Supabase env vars missing on server' });
+      // Open-access mode: anyone can join and publish for now.
+      // If the caller is signed in to Supabase we use their email as the display
+      // name; otherwise they connect as a random anonymous guest. We do NOT
+      // gate publish — that will come back when we have viewer accounts.
+      let displayName = `Guest-${randomBytes(2).toString('hex')}`;
+      let userIdentity = `web-anon-${randomBytes(4).toString('hex')}`;
+
+      if (bearer) {
+        const supabaseUrl = process.env.VITE_SUPABASE_URL;
+        const supabaseAnonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+        if (supabaseUrl && supabaseAnonKey) {
+          try {
+            const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+              global: { headers: { Authorization: `Bearer ${bearer}` } },
+            });
+            const { data: userData } = await supabase.auth.getUser(bearer);
+            if (userData?.user) {
+              userIdentity = `web-${userData.user.id}`;
+              displayName = userData.user.email?.split('@')[0] ?? displayName;
+            }
+          } catch {
+            // Fall through to anonymous identity
+          }
+        }
       }
-      const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-        global: { headers: { Authorization: `Bearer ${bearer}` } },
-      });
-      const { data: userData, error: userErr } = await supabase.auth.getUser(bearer);
-      if (userErr || !userData.user) {
-        return res.status(401).json({ error: 'Invalid Supabase token' });
-      }
-      const user = userData.user;
-      const { data: isAdmin, error: roleErr } = await supabase.rpc('has_role', {
-        _user_id: user.id,
-        _role: 'admin',
-      });
-      if (roleErr) {
-        console.error('has_role RPC failed:', roleErr);
-        return res.status(500).json({ error: 'Role lookup failed' });
-      }
-      identity = `web-${user.id}`;
-      name = user.email?.split('@')[0] ?? 'User';
-      canPublish = isAdmin === true;
+
+      identity = userIdentity;
+      name = displayName;
+      canPublish = true;
     } else {
       return res.status(400).json({ error: "Invalid 'kind' — must be 'web' or 'driver'" });
     }
