@@ -2,31 +2,41 @@ package com.verateam.driverdisplay.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.verateam.driverdisplay.ui.theme.OnSurfaceVariant
 import com.verateam.driverdisplay.ui.theme.RacingGreen
 import com.verateam.driverdisplay.ui.theme.RacingRed
+import com.verateam.driverdisplay.ui.theme.RacingYellow
+import com.verateam.driverdisplay.ui.theme.Surface as RacingSurface
 import com.verateam.driverdisplay.voice.VoiceController.VoiceState
 
 /**
- * Compact voice-chat control. One circular primary button (join / mute toggle),
- * plus a small leave button when connected. Designed for the driver display —
- * unobtrusive, no participant list, no volume slider (use phone volume keys).
+ * Compact voice-chat panel for the driver display. One small rounded card with
+ * a status indicator plus 1–2 text buttons depending on state.
+ *
+ * Designed to sit unobtrusively in the top-left corner. Volume is handled by
+ * the device's physical volume keys.
  */
 @Composable
 fun MicButton(
@@ -37,65 +47,30 @@ fun MicButton(
     onLeave: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    Surface(
+        modifier = modifier.width(180.dp),
+        color = RacingSurface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(10.dp),
+        tonalElevation = 2.dp,
     ) {
-        when (state) {
-            VoiceState.Idle -> {
-                PrimaryButton(
-                    icon = Icons.Filled.Phone,
-                    tint = Color.White,
-                    background = if (hasMicPermission) RacingGreen else MaterialTheme.colorScheme.surfaceVariant,
-                    contentDescription = if (hasMicPermission) "Anslut till voice" else "Mikrofon-tillstånd saknas",
-                    onClick = onJoin,
-                    enabled = hasMicPermission,
-                )
-            }
-            VoiceState.Connecting,
-            VoiceState.Reconnecting -> {
-                PrimaryButton(
-                    icon = Icons.Filled.Mic,
-                    tint = Color.White,
-                    background = MaterialTheme.colorScheme.surfaceVariant,
-                    contentDescription = "Ansluter…",
-                    onClick = { /* no-op while connecting */ },
-                    enabled = false,
-                )
-            }
-            is VoiceState.Connected -> {
-                if (state.isMuted) {
-                    PrimaryButton(
-                        icon = Icons.Filled.MicOff,
-                        tint = Color.White,
-                        background = MaterialTheme.colorScheme.surfaceVariant,
-                        contentDescription = "Unmute",
-                        onClick = onToggleMute,
-                    )
-                } else {
-                    PrimaryButton(
-                        icon = Icons.Filled.Mic,
-                        tint = Color.White,
-                        background = RacingGreen,
-                        contentDescription = "Mute",
-                        onClick = onToggleMute,
-                    )
-                }
-                SecondaryButton(
-                    icon = Icons.Filled.Close,
-                    tint = Color.White,
-                    background = MaterialTheme.colorScheme.surfaceVariant,
-                    contentDescription = "Lämna voice",
-                    onClick = onLeave,
-                )
-            }
-            is VoiceState.Error -> {
-                PrimaryButton(
-                    icon = Icons.Filled.Phone,
-                    tint = Color.White,
-                    background = RacingRed,
-                    contentDescription = "Försök igen",
-                    onClick = onJoin,
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            StatusRow(state, hasMicPermission)
+            ActionRow(
+                state = state,
+                hasMicPermission = hasMicPermission,
+                onJoin = onJoin,
+                onToggleMute = onToggleMute,
+                onLeave = onLeave,
+            )
+            if (state is VoiceState.Error) {
+                Text(
+                    text = state.message,
+                    color = RacingRed,
+                    fontSize = 10.sp,
                 )
             }
         }
@@ -103,46 +78,87 @@ fun MicButton(
 }
 
 @Composable
-private fun PrimaryButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    tint: Color,
-    background: Color,
-    contentDescription: String,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-) {
-    IconButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier
-            .size(48.dp)
-            .clip(CircleShape)
-            .background(background),
-        colors = IconButtonDefaults.iconButtonColors(
-            contentColor = tint,
-            disabledContentColor = tint.copy(alpha = 0.6f),
-        ),
+private fun StatusRow(state: VoiceState, hasMicPermission: Boolean) {
+    val (color, label) = when {
+        !hasMicPermission && state is VoiceState.Idle -> OnSurfaceVariant to "Mic-tillstånd saknas"
+        state is VoiceState.Idle -> OnSurfaceVariant to "Voice"
+        state is VoiceState.Connecting -> RacingYellow to "Ansluter…"
+        state is VoiceState.Reconnecting -> RacingYellow to "Återansluter…"
+        state is VoiceState.Connected -> RacingGreen to "Driver — ansluten"
+        state is VoiceState.Error -> RacingRed to "Fel"
+        else -> OnSurfaceVariant to "Voice"
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(22.dp))
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 12.sp,
+        )
     }
 }
 
 @Composable
-private fun SecondaryButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    tint: Color,
-    background: Color,
-    contentDescription: String,
-    onClick: () -> Unit,
+private fun ActionRow(
+    state: VoiceState,
+    hasMicPermission: Boolean,
+    onJoin: () -> Unit,
+    onToggleMute: () -> Unit,
+    onLeave: () -> Unit,
 ) {
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(background),
-        colors = IconButtonDefaults.iconButtonColors(contentColor = tint),
-    ) {
-        Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(16.dp))
+    when (state) {
+        VoiceState.Idle, is VoiceState.Error -> {
+            Button(
+                onClick = onJoin,
+                enabled = hasMicPermission,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = RacingGreen),
+                contentPadding = PaddingValues(vertical = 6.dp),
+            ) {
+                Text(if (state is VoiceState.Error) "Försök igen" else "Anslut", fontSize = 13.sp)
+            }
+        }
+        VoiceState.Connecting, VoiceState.Reconnecting -> {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Text("Ansluter…", fontSize = 12.sp, color = OnSurfaceVariant)
+            }
+        }
+        is VoiceState.Connected -> {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Button(
+                    onClick = onToggleMute,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (state.isMuted) OnSurfaceVariant else RacingGreen
+                    ),
+                    contentPadding = PaddingValues(vertical = 6.dp),
+                ) {
+                    Text(if (state.isMuted) "Unmute" else "Mute", fontSize = 12.sp)
+                }
+                OutlinedButton(
+                    onClick = onLeave,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 6.dp),
+                ) {
+                    Text("Avsluta", fontSize = 12.sp)
+                }
+            }
+        }
     }
 }

@@ -98,7 +98,8 @@ export function useVoiceChat(): VoiceChatApi {
       const data = (await resp.json()) as TokenResponse;
       setCanPublish(data.canPublish);
 
-      const url = (import.meta.env.VITE_LIVEKIT_URL as string | undefined) || data.url;
+      // Trim — Vercel sometimes preserves trailing newlines from env-var paste.
+      const url = ((import.meta.env.VITE_LIVEKIT_URL as string | undefined) || data.url).trim();
 
       const r = new Room({
         adaptiveStream: true,
