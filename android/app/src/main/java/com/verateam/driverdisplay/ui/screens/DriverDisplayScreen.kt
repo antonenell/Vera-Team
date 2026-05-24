@@ -94,7 +94,7 @@ fun DriverDisplayContent(
                 )
             }
 
-            // Bottom row: Current Lap Time, Track Map, Flags
+            // Bottom row: Current Lap Time, Track Map, Flags, Voice Chat
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -129,6 +129,18 @@ fun DriverDisplayContent(
                         .weight(1f)
                         .fillMaxHeight()
                 )
+
+                // Voice Chat
+                MicButton(
+                    state = voiceState,
+                    hasMicPermission = hasMicPermission,
+                    onJoin = onVoiceJoin,
+                    onToggleMute = onVoiceMuteToggle,
+                    onLeave = onVoiceLeave,
+                    modifier = Modifier
+                        .weight(0.85f)
+                        .fillMaxHeight()
+                )
             }
         }
 
@@ -137,18 +149,6 @@ fun DriverDisplayContent(
             isConnected = uiState.isConnected,
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(4.dp)
-        )
-
-        // Voice chat controls in top left
-        MicButton(
-            state = voiceState,
-            hasMicPermission = hasMicPermission,
-            onJoin = onVoiceJoin,
-            onToggleMute = onVoiceMuteToggle,
-            onLeave = onVoiceLeave,
-            modifier = Modifier
-                .align(Alignment.TopStart)
                 .padding(4.dp)
         )
     }
