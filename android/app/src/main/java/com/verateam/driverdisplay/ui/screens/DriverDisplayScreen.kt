@@ -58,7 +58,7 @@ fun DriverDisplayContent(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Top row: Time Remaining, Lap Progress, Speed
+            // Top row: Time Remaining, Lap Progress, Speed, Target Avg Speed
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -72,7 +72,7 @@ fun DriverDisplayContent(
                     isRunning = uiState.isRunning,
                     formatTime = formatTime,
                     modifier = Modifier
-                        .weight(1.5f)
+                        .weight(1.4f)
                         .fillMaxHeight()
                 )
 
@@ -85,11 +85,19 @@ fun DriverDisplayContent(
                         .fillMaxHeight()
                 )
 
-                // Speed
+                // Speed (instantaneous)
                 SpeedDisplay(
                     speed = uiState.speed,
                     modifier = Modifier
                         .weight(1f)
+                        .fillMaxHeight()
+                )
+
+                // Target mean speed to make the race plan
+                MeanSpeedDisplay(
+                    target = uiState.meanSpeedTarget,
+                    modifier = Modifier
+                        .weight(1.1f)
                         .fillMaxHeight()
                 )
             }

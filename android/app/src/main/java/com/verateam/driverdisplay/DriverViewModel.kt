@@ -1,8 +1,12 @@
 package com.verateam.driverdisplay
 
+import android.app.Application
+import android.content.Context
 import android.util.Log
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.verateam.driverdisplay.data.MeanSpeedTarget
+import com.verateam.driverdisplay.data.PaceCalculator
 import com.verateam.driverdisplay.data.RaceState
 import com.verateam.driverdisplay.data.Repository
 import com.verateam.driverdisplay.data.TrackFlag
@@ -40,6 +44,7 @@ data class DriverUiState(
     val isRunning: Boolean = false,
     val timeLeftSeconds: Int = 2100,
     val totalRaceTime: Int = 2100,
+    val safetySeconds: Int = 60,
     val currentLap: Int = 0,
     val totalLaps: Int = 11,
     val lapTimes: List<Int> = emptyList(),
@@ -50,14 +55,23 @@ data class DriverUiState(
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
 
+    // Pacing: target mean speed to make the race plan
+    val meanSpeedTarget: MeanSpeedTarget = MeanSpeedTarget(),
+
     // Flags
     val flags: List<TrackFlag> = emptyList(),
     val selectedTrack: String = "stora-holm"
 )
 
-class DriverViewModel : ViewModel() {
+class DriverViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repository = Repository()
+
+    // Persists the race odometer (keyed by startedAtMs) so an app restart mid-race
+    // doesn't lose the calibrated lap distance / actual average.
+    private val pacePrefs = app.getSharedPreferences("vera_pace", Context.MODE_PRIVATE)
+    private var odoRestoreChecked = false
+    private var lastPersistMs = 0L
 
     private val _uiState = MutableStateFlow(DriverUiState())
     val uiState: StateFlow<DriverUiState> = _uiState.asStateFlow()
@@ -82,6 +96,11 @@ class DriverViewModel : ViewModel() {
 
     // GPS polling job
     private var gpsPollingJob: Job? = null
+
+    // Odometer (∫ GPS speed dt) for self-calibrating lap distance + actual mean speed.
+    @Volatile private var odometerMeters = 0.0
+    private var odometerAtLastLap = 0.0
+    private var lastOdoUpdateMs = 0L
 
     companion object {
         private const val TAG = "DriverViewModel"
@@ -182,6 +201,34 @@ class DriverViewModel : ViewModel() {
         val previousState = currentRaceState
         currentRaceState = newState
 
+        val prevLaps = previousState?.lapTimes?.size ?: 0
+        val startedAtMs = newState.startedAtMs
+
+        // Odometer lifecycle.
+        when {
+            startedAtMs == null -> {
+                // Idle / reset → clear everything (in memory + persisted).
+                odometerMeters = 0.0; odometerAtLastLap = 0.0; lastOdoUpdateMs = 0L
+                pacePrefs.edit().clear().apply()
+            }
+            previousState != null && previousState.startedAtMs != startedAtMs -> {
+                // Genuine new race → fresh odometer.
+                odometerMeters = 0.0; odometerAtLastLap = 0.0; lastOdoUpdateMs = 0L
+            }
+            previousState == null -> {
+                // First observation of an already-running race (e.g. app restarted
+                // mid-race) → restore the odometer instead of zeroing it.
+                maybeRestoreOdometer(startedAtMs)
+            }
+        }
+
+        // A genuine new lap (not the first observed state) → snapshot the odometer,
+        // back-dated to the actual line crossing to undo the poll lag.
+        if (previousState != null && newState.lapTimes.size > prevLaps) {
+            odometerAtLastLap = backDatedLapOdometer(newState)
+            persistOdometer()
+        }
+
         // Check if this is a significant state change
         val stateChanged = previousState?.isRunning != newState.isRunning ||
                 previousState?.startedAtMs != newState.startedAtMs
@@ -190,6 +237,8 @@ class DriverViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(
             isRunning = newState.isRunning,
             totalRaceTime = newState.totalRaceTime,
+            safetySeconds = newState.safetySeconds,
+            totalLaps = newState.totalLaps,
             currentLap = newState.lapTimes.size,
             lapTimes = newState.lapTimes,
             isConnected = true
@@ -251,10 +300,11 @@ class DriverViewModel : ViewModel() {
             // Paused: render the frozen time once, no loop
             calculateAndUpdateTime()
         } else {
-            // Idle (never started or reset): show full time
+            // Idle (never started or reset): show full time, clear the pace panel
             _uiState.value = _uiState.value.copy(
                 timeLeftSeconds = raceState.totalRaceTime,
-                currentLapElapsed = 0
+                currentLapElapsed = 0,
+                meanSpeedTarget = MeanSpeedTarget()
             )
         }
     }
@@ -294,7 +344,8 @@ class DriverViewModel : ViewModel() {
 
         _uiState.value = _uiState.value.copy(
             timeLeftSeconds = timeLeftSeconds,
-            currentLapElapsed = currentLapElapsed
+            currentLapElapsed = currentLapElapsed,
+            meanSpeedTarget = computePace()
         )
     }
 
@@ -336,13 +387,88 @@ class DriverViewModel : ViewModel() {
         gpsPollingJob?.cancel()
         gpsPollingJob = viewModelScope.launch {
             LiveLocation.state.collect { loc ->
+                integrateOdometer(loc.speedKmh)
                 _uiState.value = _uiState.value.copy(
                     latitude = loc.latitude,
                     longitude = loc.longitude,
-                    speed = loc.speedKmh
+                    speed = loc.speedKmh,
+                    meanSpeedTarget = computePace()
                 )
             }
         }
+    }
+
+    /** Integrate GPS speed into the race odometer while the race is running. */
+    private fun integrateOdometer(speedKmh: Double) {
+        val now = System.currentTimeMillis()
+        val running = currentRaceState?.let { it.isRunning && it.startedAtMs != null } == true
+        if (running && lastOdoUpdateMs != 0L) {
+            val dt = (now - lastOdoUpdateMs) / 1000.0
+            if (dt in 0.0..2.0) odometerMeters += (speedKmh / 3.6) * dt
+        }
+        lastOdoUpdateMs = now
+        if (running && now - lastPersistMs > 3000L) {
+            lastPersistMs = now
+            persistOdometer()
+        }
+    }
+
+    /**
+     * Back-date the lap-completion odometer to the real line-crossing time — the
+     * 3 s race_state poll detects laps late, so subtract the distance driven since
+     * the lap actually ended (using the current speed). Clamped not to go backwards.
+     */
+    private fun backDatedLapOdometer(state: RaceState): Double {
+        val lapEndElapsed = state.lapTimes.sum().toDouble()
+        val lagSec = (currentElapsedSeconds() - lapEndElapsed).coerceIn(0.0, 5.0)
+        val curSpeedMps = _uiState.value.speed / 3.6
+        return (odometerMeters - lagSec * curSpeedMps).coerceAtLeast(odometerAtLastLap)
+    }
+
+    private fun persistOdometer() {
+        val started = currentRaceState?.startedAtMs ?: return
+        pacePrefs.edit()
+            .putLong("started", started)
+            .putString("odo", odometerMeters.toString())
+            .putString("odoLap", odometerAtLastLap.toString())
+            .apply()
+    }
+
+    private fun maybeRestoreOdometer(startedAtMs: Long) {
+        if (odoRestoreChecked) return
+        odoRestoreChecked = true
+        if (pacePrefs.getLong("started", 0L) == startedAtMs) {
+            odometerMeters = pacePrefs.getString("odo", null)?.toDoubleOrNull() ?: 0.0
+            odometerAtLastLap = pacePrefs.getString("odoLap", null)?.toDoubleOrNull() ?: 0.0
+            lastOdoUpdateMs = 0L
+        }
+    }
+
+    /** Target mean speed from the race plan + lap scores + GPS-measured distance. */
+    private fun computePace(): MeanSpeedTarget {
+        val rs = currentRaceState ?: return MeanSpeedTarget()
+        val lapsCompleted = rs.lapTimes.size
+        val lapDistance = if (lapsCompleted >= 1 && odometerAtLastLap > 0.0)
+            odometerAtLastLap / lapsCompleted else 0.0
+        return PaceCalculator.compute(
+            totalLaps = rs.totalLaps,
+            lapsCompleted = lapsCompleted,
+            targetBudgetSec = (rs.totalRaceTime - rs.safetySeconds).toDouble(),
+            elapsedSec = currentElapsedSeconds(),
+            completedLapsSec = rs.lapTimes.sum().toDouble(),
+            lapDistanceM = lapDistance,
+            odometerM = odometerMeters,
+        )
+    }
+
+    /** Live elapsed race time (seconds), same authoritative formula as the timer. */
+    private fun currentElapsedSeconds(): Double {
+        val rs = currentRaceState ?: return 0.0
+        val startedAtMs = rs.startedAtMs ?: return 0.0
+        val referenceNow = if (rs.isRunning) System.currentTimeMillis() + clockOffset
+            else (rs.pausedAtMs ?: startedAtMs)
+        val elapsedMs = referenceNow - startedAtMs - rs.pausedOffsetMs
+        return (elapsedMs / 1000.0).coerceAtLeast(0.0)
     }
 
     // Change track

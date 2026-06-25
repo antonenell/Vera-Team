@@ -21,6 +21,8 @@ data class RaceState(
     @SerialName("lap_times") val lapTimes: List<Int> = emptyList(),
     @SerialName("current_lap") val currentLap: Int = 1,
     @SerialName("total_race_time") val totalRaceTime: Int = 2100,
+    @SerialName("total_laps") val totalLaps: Int = 11,           // defaults if column absent (pre-migration)
+    @SerialName("safety_seconds") val safetySeconds: Int = 60,
     @SerialName("updated_at") val updatedAt: String? = null
 )
 
