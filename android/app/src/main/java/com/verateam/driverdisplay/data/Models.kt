@@ -32,6 +32,8 @@ data class TrackFlag(
     @SerialName("track_id") val trackId: String,
     @SerialName("flag_id") val flagId: String,
     val color: String? = "grey",
+    val lng: Double? = null,   // admin-placed position (matches the web)
+    val lat: Double? = null,
     @SerialName("updated_at") val updatedAt: String? = null
 )
 

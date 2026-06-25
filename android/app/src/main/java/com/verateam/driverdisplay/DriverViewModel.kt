@@ -60,7 +60,7 @@ data class DriverUiState(
 
     // Flags
     val flags: List<TrackFlag> = emptyList(),
-    val selectedTrack: String = "stora-holm"
+    val selectedTrack: String = "silesia-ring"  // matches the web default
 )
 
 class DriverViewModel(app: Application) : AndroidViewModel(app) {

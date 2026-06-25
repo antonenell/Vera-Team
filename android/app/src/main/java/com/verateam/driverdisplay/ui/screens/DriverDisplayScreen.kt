@@ -33,6 +33,7 @@ fun DriverDisplayScreen(
         onVoiceJoin = voiceViewModel::join,
         onVoiceMuteToggle = voiceViewModel::toggleMute,
         onVoiceLeave = voiceViewModel::leave,
+        onSelectTrack = viewModel::selectTrack,
     )
 }
 
@@ -47,6 +48,7 @@ fun DriverDisplayContent(
     onVoiceJoin: () -> Unit = {},
     onVoiceMuteToggle: () -> Unit = {},
     onVoiceLeave: () -> Unit = {},
+    onSelectTrack: (String) -> Unit = {},
 ) {
     Box(
         modifier = Modifier
@@ -102,7 +104,7 @@ fun DriverDisplayContent(
                 )
             }
 
-            // Bottom row: Current Lap Time, Track Map, Flags, Voice Chat
+            // Bottom row: Current Lap Time, Track Map (with flags), Voice Chat
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -119,22 +121,17 @@ fun DriverDisplayContent(
                         .fillMaxHeight()
                 )
 
-                // Track Map (replaces Best Lap)
+                // Track Map — now the only place flags are shown (rendered from
+                // their live database positions for the selected track).
                 TrackMap(
                     latitude = uiState.latitude,
                     longitude = uiState.longitude,
                     isCarOnline = uiState.isConnected,
-                    flags = uiState.flags.associate { it.flagId to (it.color ?: "") },
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-
-                // Flags
-                FlagIndicator(
                     flags = uiState.flags,
+                    selectedTrack = uiState.selectedTrack,
+                    onTrackChange = onSelectTrack,
                     modifier = Modifier
-                        .weight(1f)
+                        .weight(2f)
                         .fillMaxHeight()
                 )
 
@@ -146,7 +143,7 @@ fun DriverDisplayContent(
                     onToggleMute = onVoiceMuteToggle,
                     onLeave = onVoiceLeave,
                     modifier = Modifier
-                        .weight(0.85f)
+                        .weight(1f)
                         .fillMaxHeight()
                 )
             }
