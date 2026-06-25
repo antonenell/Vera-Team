@@ -11,14 +11,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.verateam.driverdisplay.ui.theme.OnSurface
 import com.verateam.driverdisplay.ui.theme.OnSurfaceVariant
+import kotlin.math.roundToInt
 
 @Composable
 fun SpeedDisplay(
     speed: Double,
     modifier: Modifier = Modifier
 ) {
-    val speedInt = speed.toInt().coerceIn(0, 99)
-    // Pad speed to 2 digits for consistent display (0-99 range)
+    // Round to nearest (matches the web's Math.round) and don't cap, so the app
+    // speedometer and the web "Speed" box always show the same number. Min 2 digits
+    // for a steady layout; padStart never truncates, so 100+ km/h still renders.
+    val speedInt = speed.roundToInt().coerceAtLeast(0)
     val speedFormatted = speedInt.toString().padStart(2, '0')
 
     Panel(modifier = modifier) {
