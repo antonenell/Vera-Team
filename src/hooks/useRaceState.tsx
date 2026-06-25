@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { targetRaceTime, targetLapTime } from "@/lib/raceMath";
+import { readRacePlanCache, writeRacePlanCache, resolveSetting } from "@/lib/raceSettingsCache";
 
 const RACE_STATE_ID = "00000000-0000-0000-0000-000000000001";
 const TOTAL_RACE_TIME_MS = 35 * 60 * 1000; // 35 minutes in milliseconds
@@ -186,6 +187,9 @@ export const useRaceState = (isAdmin: boolean) => {
   const updateRaceState = useCallback((dbData: DbRaceState) => {
     const lapTimesArray = Array.isArray(dbData.lap_times) ? dbData.lap_times : [];
 
+    // Laps/safety fall back to the local cache when the DB columns aren't there
+    // yet, so an admin's edits survive realtime updates and reloads pre-migration.
+    const cache = readRacePlanCache();
     raceStateRef.current = {
       isRunning: dbData.is_running,
       startedAtMs: dbData.started_at_ms,
@@ -193,8 +197,8 @@ export const useRaceState = (isAdmin: boolean) => {
       pausedOffsetMs: dbData.paused_offset_ms ?? 0,
       lapTimes: lapTimesArray,
       totalRaceTimeMs: dbData.total_race_time * 1000,
-      totalLaps: dbData.total_laps ?? DEFAULT_TOTAL_LAPS,
-      safetySeconds: dbData.safety_seconds ?? DEFAULT_SAFETY_SECONDS,
+      totalLaps: resolveSetting(dbData.total_laps, cache.totalLaps, DEFAULT_TOTAL_LAPS),
+      safetySeconds: resolveSetting(dbData.safety_seconds, cache.safetySeconds, DEFAULT_SAFETY_SECONDS),
     };
 
     // Trigger immediate re-render
@@ -463,6 +467,13 @@ export const useRaceState = (isAdmin: boolean) => {
       };
       forceUpdate((n) => n + 1);
 
+      // Mirror laps/safety to the local cache so they survive realtime updates +
+      // reloads even if the DB doesn't have those columns yet.
+      const cachePatch: { totalLaps?: number; safetySeconds?: number } = {};
+      if (settings.totalLaps != null) cachePatch.totalLaps = settings.totalLaps;
+      if (settings.safetySeconds != null) cachePatch.safetySeconds = settings.safetySeconds;
+      if (Object.keys(cachePatch).length) writeRacePlanCache(cachePatch);
+
       const dbUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (settings.durationSeconds != null) dbUpdate.total_race_time = settings.durationSeconds;
       if (settings.totalLaps != null) dbUpdate.total_laps = settings.totalLaps;
@@ -474,9 +485,10 @@ export const useRaceState = (isAdmin: boolean) => {
         .eq("id", RACE_STATE_ID);
 
       if (error) {
-        console.error("updateSettings failed:", error);
-        raceStateRef.current = prev;
-        forceUpdate((n) => n + 1);
+        // Expected before the race_settings migration: total_laps/safety_seconds
+        // don't exist as columns. The optimistic value + local cache keep it
+        // working; the DB just isn't syncing laps/safety to other clients yet.
+        console.warn("updateSettings: DB write did not persist (laps/safety need migration?):", error.message);
       }
     },
     [isAdmin]
