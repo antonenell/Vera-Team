@@ -61,6 +61,8 @@ export type Database = {
           color: string
           flag_id: string
           id: string
+          lat: number | null
+          lng: number | null
           track_id: string
           updated_at: string
         }
@@ -68,6 +70,8 @@ export type Database = {
           color?: string
           flag_id: string
           id?: string
+          lat?: number | null
+          lng?: number | null
           track_id: string
           updated_at?: string
         }
@@ -75,6 +79,8 @@ export type Database = {
           color?: string
           flag_id?: string
           id?: string
+          lat?: number | null
+          lng?: number | null
           track_id?: string
           updated_at?: string
         }
