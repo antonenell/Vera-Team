@@ -14,15 +14,10 @@ import { useGpsTelemetry } from "@/hooks/useGpsTelemetry";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
 import chalmersLogo from "@/assets/chalmersverateam.svg";
 
-const TOTAL_LAPS = 11;
-const RACE_DURATION_SECONDS = 35 * 60; // 35 minutes
-const TARGET_RACE_TIME = 34 * 60; // 34 minutes (1 min safety margin)
-const TARGET_LAP_TIME = TARGET_RACE_TIME / TOTAL_LAPS; // ~185.5 seconds per lap
-
 const Index = () => {
   const { user, isAdmin, signOut } = useAuth();
 
-  // Real-time synced race state
+  // Real-time synced race state + admin-editable race plan
   const {
     timeLeft,
     isRunning,
@@ -30,10 +25,16 @@ const Index = () => {
     currentLap,
     lapTimes,
     currentLapElapsed,
+    durationSeconds,
+    totalLaps,
+    safetySeconds,
+    targetRaceTime,
+    targetLapTime,
     isLoading,
     startStop,
     recordLap,
     reset,
+    updateSettings,
   } = useRaceState(isAdmin);
 
   // GPS telemetry from driver's phone
@@ -159,14 +160,18 @@ const Index = () => {
         {/* Timer */}
         <RaceTimer
           timeLeftSeconds={timeLeft}
-          totalSeconds={RACE_DURATION_SECONDS}
+          durationSeconds={durationSeconds}
           isRunning={isRunning}
           isPaused={isPaused}
           onStartStop={startStop}
           onLap={recordLap}
           onReset={reset}
           lapTimes={lapTimes}
-          targetLapTime={TARGET_LAP_TIME}
+          targetLapTime={targetLapTime}
+          targetRaceTime={targetRaceTime}
+          totalLaps={totalLaps}
+          safetySeconds={safetySeconds}
+          onUpdateSettings={updateSettings}
           className="col-span-2 row-span-2"
           isAdmin={isAdmin}
         />
@@ -175,8 +180,8 @@ const Index = () => {
         <LapTimes
           lapTimes={lapTimes}
           currentLap={currentLap + (isRunning ? 1 : 0)}
-          totalLaps={TOTAL_LAPS}
-          targetLapTime={TARGET_LAP_TIME}
+          totalLaps={totalLaps}
+          targetLapTime={targetLapTime}
           currentLapElapsed={currentLapElapsed}
           className="col-span-2 row-span-2"
         />
@@ -200,12 +205,12 @@ const Index = () => {
                 <span className="text-5xl font-bold text-racing-blue font-mono">
                   {currentLap}
                 </span>
-                <span className="text-2xl text-muted-foreground">/ {TOTAL_LAPS}</span>
+                <span className="text-2xl text-muted-foreground">/ {totalLaps}</span>
                 <span className="text-muted-foreground ml-2">laps</span>
               </div>
               {/* Lap progress dots */}
               <div className="flex gap-2 flex-wrap">
-                {Array.from({ length: TOTAL_LAPS }, (_, i) => (
+                {Array.from({ length: totalLaps }, (_, i) => (
                   <div
                     key={i}
                     className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
@@ -228,14 +233,14 @@ const Index = () => {
         <div className="glass-card relative rounded-2xl p-6 col-span-2 flex flex-col">
           <Activity className="w-8 h-8 mb-4 text-racing-green" strokeWidth={1.5} />
           <p className="text-muted-foreground text-sm font-medium mb-2 uppercase tracking-wide">
-            Best Lap (Target: {Math.floor(TARGET_LAP_TIME / 60)}:{Math.round(TARGET_LAP_TIME % 60).toString().padStart(2, "0")})
+            Best Lap (Target: {Math.floor(targetLapTime / 60)}:{Math.round(targetLapTime % 60).toString().padStart(2, "0")})
           </p>
           <div className="flex-1 flex items-end">
             <span className="text-4xl font-bold text-racing-green font-mono">
               {lapTimes.length > 0 
                 ? (() => {
                     const bestLap = lapTimes.reduce((best, time) => 
-                      Math.abs(time - TARGET_LAP_TIME) < Math.abs(best - TARGET_LAP_TIME) ? time : best
+                      Math.abs(time - targetLapTime) < Math.abs(best - targetLapTime) ? time : best
                     );
                     return `${Math.floor(bestLap / 60)}:${(bestLap % 60).toString().padStart(2, "0")}`;
                   })()

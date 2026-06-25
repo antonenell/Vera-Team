@@ -23,8 +23,10 @@ export type Database = {
           lap_times: number[]
           paused_at_ms: number | null
           paused_offset_ms: number
+          safety_seconds: number
           start_time: string | null
           started_at_ms: number | null
+          total_laps: number
           total_race_time: number
           updated_at: string
         }
@@ -36,8 +38,10 @@ export type Database = {
           lap_times?: number[]
           paused_at_ms?: number | null
           paused_offset_ms?: number
+          safety_seconds?: number
           start_time?: string | null
           started_at_ms?: number | null
+          total_laps?: number
           total_race_time?: number
           updated_at?: string
         }
@@ -49,8 +53,10 @@ export type Database = {
           lap_times?: number[]
           paused_at_ms?: number | null
           paused_offset_ms?: number
+          safety_seconds?: number
           start_time?: string | null
           started_at_ms?: number | null
+          total_laps?: number
           total_race_time?: number
           updated_at?: string
         }

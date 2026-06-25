@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { targetRaceTime, targetLapTime } from "@/lib/raceMath";
 
 const RACE_STATE_ID = "00000000-0000-0000-0000-000000000001";
 const TOTAL_RACE_TIME_MS = 35 * 60 * 1000; // 35 minutes in milliseconds
+const DEFAULT_TOTAL_LAPS = 11;
+const DEFAULT_SAFETY_SECONDS = 60;
 
 /**
  * Server-Authoritative Timer with Sub-100ms Synchronization
@@ -28,6 +31,8 @@ interface RaceState {
   pausedOffsetMs: number;
   lapTimes: number[];
   totalRaceTimeMs: number;
+  totalLaps: number;
+  safetySeconds: number;
 }
 
 interface DbRaceState {
@@ -40,6 +45,8 @@ interface DbRaceState {
   start_time: string | null;
   lap_times: number[];
   total_race_time: number;
+  total_laps: number | null;
+  safety_seconds: number | null;
   updated_at: string;
 }
 
@@ -107,6 +114,8 @@ export const useRaceState = (isAdmin: boolean) => {
     pausedOffsetMs: 0,
     lapTimes: [],
     totalRaceTimeMs: TOTAL_RACE_TIME_MS,
+    totalLaps: DEFAULT_TOTAL_LAPS,
+    safetySeconds: DEFAULT_SAFETY_SECONDS,
   });
 
   const [isLoading, setIsLoading] = useState(true);
@@ -184,6 +193,8 @@ export const useRaceState = (isAdmin: boolean) => {
       pausedOffsetMs: dbData.paused_offset_ms ?? 0,
       lapTimes: lapTimesArray,
       totalRaceTimeMs: dbData.total_race_time * 1000,
+      totalLaps: dbData.total_laps ?? DEFAULT_TOTAL_LAPS,
+      safetySeconds: dbData.safety_seconds ?? DEFAULT_SAFETY_SECONDS,
     };
 
     // Trigger immediate re-render
@@ -432,6 +443,45 @@ export const useRaceState = (isAdmin: boolean) => {
       .eq("id", RACE_STATE_ID);
   }, [isAdmin]);
 
+  // Admin: edit the race plan (duration / laps / safety buffer). Optimistic so
+  // the timer + target lap update instantly; reverts if the write fails.
+  const updateSettings = useCallback(
+    async (settings: {
+      durationSeconds?: number;
+      totalLaps?: number;
+      safetySeconds?: number;
+    }) => {
+      if (!isAdmin) return;
+
+      const prev = raceStateRef.current;
+      raceStateRef.current = {
+        ...prev,
+        totalRaceTimeMs:
+          settings.durationSeconds != null ? settings.durationSeconds * 1000 : prev.totalRaceTimeMs,
+        totalLaps: settings.totalLaps != null ? settings.totalLaps : prev.totalLaps,
+        safetySeconds: settings.safetySeconds != null ? settings.safetySeconds : prev.safetySeconds,
+      };
+      forceUpdate((n) => n + 1);
+
+      const dbUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (settings.durationSeconds != null) dbUpdate.total_race_time = settings.durationSeconds;
+      if (settings.totalLaps != null) dbUpdate.total_laps = settings.totalLaps;
+      if (settings.safetySeconds != null) dbUpdate.safety_seconds = settings.safetySeconds;
+
+      const { error } = await supabase
+        .from("race_state")
+        .update(dbUpdate)
+        .eq("id", RACE_STATE_ID);
+
+      if (error) {
+        console.error("updateSettings failed:", error);
+        raceStateRef.current = prev;
+        forceUpdate((n) => n + 1);
+      }
+    },
+    [isAdmin]
+  );
+
   // Calculate display values on every render (not stored)
   const state = raceStateRef.current;
   const remainingMs = getRemainingMs();
@@ -445,6 +495,10 @@ export const useRaceState = (isAdmin: boolean) => {
 
   const isPaused = !state.isRunning && state.startedAtMs !== null;
 
+  const durationSeconds = Math.floor(state.totalRaceTimeMs / 1000);
+  const targetRace = targetRaceTime(durationSeconds, state.safetySeconds);
+  const targetLap = targetLapTime(durationSeconds, state.safetySeconds, state.totalLaps);
+
   return {
     timeLeft,
     isRunning: state.isRunning,
@@ -452,10 +506,16 @@ export const useRaceState = (isAdmin: boolean) => {
     currentLap: state.lapTimes.length,
     lapTimes: state.lapTimes,
     currentLapElapsed,
-    totalRaceTime: Math.floor(state.totalRaceTimeMs / 1000),
+    totalRaceTime: durationSeconds,
+    durationSeconds,
+    totalLaps: state.totalLaps,
+    safetySeconds: state.safetySeconds,
+    targetRaceTime: targetRace,
+    targetLapTime: targetLap,
     isLoading,
     startStop,
     recordLap,
     reset,
+    updateSettings,
   };
 };
