@@ -38,6 +38,9 @@ private const val TAG = "TrackMap"
 
 private const val MAPBOX_STYLE_URL = "mapbox://styles/carlberge/cmj42ghcf009601r47hgyaiku"
 
+// Map rotation: a positive bearing rotates the map content counter-clockwise.
+private const val MAP_BEARING = 20.0
+
 /** Camera config per track (flag positions now come live from the database). */
 data class TrackConfig(
     val name: String,
@@ -95,6 +98,7 @@ fun TrackMap(
             CameraOptions.Builder()
                 .center(Point.fromLngLat(track.center.first, track.center.second))
                 .zoom(track.zoom)
+                .bearing(MAP_BEARING)
                 .build()
         )
     }
@@ -178,6 +182,7 @@ fun TrackMap(
                                 CameraOptions.Builder()
                                     .center(Point.fromLngLat(track.center.first, track.center.second))
                                     .zoom(track.zoom)
+                                    .bearing(MAP_BEARING)
                                     .build()
                             )
                             mapboxMap.loadStyle(MAPBOX_STYLE_URL) {
@@ -185,6 +190,7 @@ fun TrackMap(
                                     CameraOptions.Builder()
                                         .center(Point.fromLngLat(track.center.first, track.center.second))
                                         .zoom(track.zoom)
+                                        .bearing(MAP_BEARING)
                                         .build()
                                 )
                                 pointAnnotationManager = annotations.createPointAnnotationManager()
