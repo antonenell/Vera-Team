@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.verateam.driverdisplay.data.RaceState
 import com.verateam.driverdisplay.data.Repository
 import com.verateam.driverdisplay.data.TrackFlag
+import com.verateam.driverdisplay.location.LiveLocation
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -127,8 +128,8 @@ class DriverViewModel : ViewModel() {
             // Step 6: Start flags polling
             startFlagsPolling()
 
-            // Step 7: Start GPS polling
-            startGpsPolling()
+            // Step 7: Reflect on-device live location instantly (no Supabase poll)
+            observeLiveLocation()
         }
     }
 
@@ -327,36 +328,21 @@ class DriverViewModel : ViewModel() {
     }
 
     /**
-     * Poll GPS telemetry from Supabase for real-time location updates.
+     * Reflect the on-device live location (produced by LocationService) directly
+     * in the UI. This is local and instant — no Supabase round-trip — so the
+     * driver's speedometer/map update the moment a GPS fix arrives.
      */
-    private fun startGpsPolling() {
+    private fun observeLiveLocation() {
         gpsPollingJob?.cancel()
         gpsPollingJob = viewModelScope.launch {
-            while (isActive) {
-                try {
-                    val telemetry = repository.fetchGpsTelemetry()
-                    if (telemetry != null) {
-                        _uiState.value = _uiState.value.copy(
-                            latitude = telemetry.latitude,
-                            longitude = telemetry.longitude,
-                            speed = telemetry.speed
-                        )
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "GPS polling error: ${e.message}")
-                }
-                delay(GPS_POLL_INTERVAL_MS)
+            LiveLocation.state.collect { loc ->
+                _uiState.value = _uiState.value.copy(
+                    latitude = loc.latitude,
+                    longitude = loc.longitude,
+                    speed = loc.speedKmh
+                )
             }
         }
-    }
-
-    // Called by LocationService
-    fun updateGpsData(latitude: Double, longitude: Double, speed: Double) {
-        _uiState.value = _uiState.value.copy(
-            latitude = latitude,
-            longitude = longitude,
-            speed = speed
-        )
     }
 
     // Change track

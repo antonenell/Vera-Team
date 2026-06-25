@@ -22,6 +22,7 @@ import android.os.BatteryManager
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -29,124 +30,124 @@ import com.google.android.gms.location.*
 import com.verateam.driverdisplay.MainActivity
 import com.verateam.driverdisplay.R
 import com.verateam.driverdisplay.data.Repository
-import com.verateam.driverdisplay.location.BearingSmoother
 import com.verateam.driverdisplay.location.KalmanLatLong
-import com.verateam.driverdisplay.location.SpeedSmoother
+import com.verateam.driverdisplay.location.LiveLocation
+import com.verateam.driverdisplay.location.SpeedEstimator
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Optimized Location Service for OnePlus Nord CE 3 Lite / OxygenOS 14
+ * High-accuracy, low-latency speed/location service.
  *
- * Features:
- * - FusedLocationProviderClient with PRIORITY_HIGH_ACCURACY
- * - Kalman filter for GPS smoothing (reduces jitter/drift)
- * - Sensor fusion with accelerometer for movement detection
- * - Adaptive update intervals based on movement state
- * - WakeLock to prevent GPS interruption during background operation
- * - Robust error handling for GPS unavailable scenarios
+ * Speed pipeline (see SpeedEstimator):
+ *  - GNSS Doppler speed (Location.getSpeed(), gated by hasSpeed() + speedAccuracy)
+ *    is the accurate ABSOLUTE source — even at walking pace.
+ *  - The IMU (linear-accel projected on travel direction) only predicts BETWEEN
+ *    the ~1 Hz fixes, at ~50 Hz, for responsiveness. A Kalman bias-state + ZUPT
+ *    stop the low-speed drift that broke the earlier fusion.
+ *  - An uncertainty-scaled dead-band (v < k·speedAccuracy ⇒ 0) replaces the old
+ *    hard <0.3 m/s cut, and a speed-adaptive dt-aware EMA replaces the laggy EMA.
+ *  - minUpdateDistance is 0 (a non-zero value froze the readout when crawling).
+ *
+ * Output goes straight to [LiveLocation] (on-device, instant) for the driver's
+ * own display, and is throttled to Supabase for the remote web dashboard.
  */
 class LocationService : Service(), SensorEventListener {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
     private lateinit var sensorManager: SensorManager
-    private var accelerometer: Sensor? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val repository = Repository()
 
-    // Kalman filter for GPS smoothing
     private val kalmanFilter = KalmanLatLong()
-    private val speedSmoother = SpeedSmoother(alpha = 0.35)
-    private val bearingSmoother = BearingSmoother(alpha = 0.4)
+    private val estimator = SpeedEstimator()
 
-    // Movement detection from accelerometer
-    private var isMoving = true // Assume moving by default for racing
-    private var lastAccelMagnitude = 0f
-    private val accelThreshold = 0.5f // m/s² threshold for movement detection
+    // Sensors for IMU prediction + standstill detection.
+    private var linearAccel: Sensor? = null
+    private var rotationVector: Sensor? = null
+    private var gyroscope: Sensor? = null
+    private val rotationMatrix = FloatArray(9)
+    private var haveRotation = false
+    private var gyroMagnitude = 0.0
+    private var lastImuNanos = 0L
+
+    // Standstill (SHOE-lite): IMU is "quiet" when linear-accel + gyro stay small.
+    private var quietSinceNanos = 0L
+
+    // Direction of travel from GNSS (only trusted while moving).
+    private var travelBearingRad = 0.0
+    private var haveBearing = false
+
+    // Latest GNSS-derived position + speed gate (for ZUPT + output).
+    @Volatile private var lastLat = 0.0
+    @Volatile private var lastLng = 0.0
+    @Volatile private var lastHeadingDeg = 0.0
+    @Volatile private var lastAccuracyM = 0f
+    @Volatile private var lastGnssSpeedMps = 0.0
+    @Volatile private var lastGnssSAcc = DEFAULT_SACC
+    @Volatile private var hasFix = false
+    @Volatile private var currentDisplayKmh = 0.0
+    private var lastGnssNanos = 0L
+    private var lastTelemetryNanos = 0L
 
     // GPS health monitoring
     private var consecutiveGpsFailures = 0
     private var lastValidLocationTime = 0L
-    private val gpsTimeoutMs = 5000L // Consider GPS lost after 5 seconds without update
-
-    private val _locationState = MutableStateFlow(LocationState())
-    val locationState: StateFlow<LocationState> = _locationState
-
-    data class LocationState(
-        val latitude: Double = 0.0,
-        val longitude: Double = 0.0,
-        val speed: Double = 0.0,
-        val heading: Double = 0.0,
-        val accuracy: Float = 0f,
-        val isGpsAvailable: Boolean = true,
-        val satellites: Int = 0
-    )
 
     companion object {
         private const val TAG = "LocationService"
         private const val CHANNEL_ID = "location_service_channel"
         private const val NOTIFICATION_ID = 1
 
-        // Optimal settings for racing/driving - high frequency, high accuracy
-        private const val UPDATE_INTERVAL_MOVING_MS = 200L    // 5 Hz when moving
-        private const val UPDATE_INTERVAL_STATIONARY_MS = 1000L // 1 Hz when stationary
-        private const val FASTEST_UPDATE_INTERVAL_MS = 100L   // Cap at 10 Hz max
-        private const val MIN_DISPLACEMENT_METERS = 0.5f      // Update even with small movement
+        private const val UPDATE_INTERVAL_MS = 1000L          // 1 Hz GNSS target (chip ceiling)
+        private const val FASTEST_UPDATE_INTERVAL_MS = 0L     // pass every fix
+        private const val MAX_ACCEPTABLE_ACCURACY = 50f       // horizontal radius (m)
+        private const val GPS_TIMEOUT_MS = 5000L
 
-        // Accuracy thresholds
-        private const val MAX_ACCEPTABLE_ACCURACY = 30f // meters - reject worse readings
-        private const val EXCELLENT_ACCURACY = 5f       // meters - very good GPS
+        // Speed gating / fusion
+        private const val DEFAULT_SACC = 0.5                  // speed-accuracy fallback (m/s)
+        private const val DEADBAND_K = 2.0                    // standstill: v < k·speedAccuracy
+        private const val BEARING_MIN_SPEED = 2.0             // m/s — below this bearing is unreliable
+        private const val STALE_FIX_NS = 3_000_000_000L       // reject fixes older than 3 s
+
+        // Standstill detection
+        private const val ACCEL_QUIET = 0.35                  // m/s² (linear accel magnitude)
+        private const val GYRO_QUIET = 0.08                   // rad/s
+        private const val QUIET_DURATION_NS = 700_000_000L    // 0.7 s quiet ⇒ stationary
+
+        private const val TELEMETRY_INTERVAL_NS = 200_000_000L // throttle Supabase to ~5 Hz
     }
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "LocationService onCreate")
-
         createNotificationChannel()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         setupLocationCallback()
         setupSensorManager()
         acquireWakeLock()
-
-        // Configure Kalman filter for driving - expect movement up to 50 m/s (~180 km/h)
-        kalmanFilter.setProcessNoise(15.0) // Expect significant movement
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "LocationService onStartCommand")
         startForeground(NOTIFICATION_ID, createNotification())
         startLocationUpdates()
         startSensorUpdates()
-
-        // Set online status
-        serviceScope.launch {
-            repository.setOnlineStatus(true)
-        }
-
-        // Start GPS health monitoring
+        serviceScope.launch { repository.setOnlineStatus(true) }
         startGpsHealthMonitor()
-
         return START_STICKY
     }
 
     override fun onDestroy() {
-        Log.d(TAG, "LocationService onDestroy")
         super.onDestroy()
         stopLocationUpdates()
         stopSensorUpdates()
         releaseWakeLock()
-
-        // Set offline status - use runBlocking to ensure completion
-        runBlocking {
-            repository.setOnlineStatus(false)
-        }
-
+        LiveLocation.update(LiveLocation.Data()) // clear
+        runBlocking { repository.setOnlineStatus(false) }
         serviceScope.cancel()
     }
 
@@ -155,28 +156,17 @@ class LocationService : Service(), SensorEventListener {
     // ========== NOTIFICATION ==========
 
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "GPS Tracking",
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
+        val channel = NotificationChannel(CHANNEL_ID, "GPS Tracking", NotificationManager.IMPORTANCE_LOW).apply {
             description = "High-accuracy GPS tracking for racing"
             setShowBadge(false)
         }
-
-        val notificationManager = getSystemService(NotificationManager::class.java)
-        notificationManager.createNotificationChannel(channel)
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     private fun createNotification(): Notification {
-        // Intent to open app when notification is tapped
         val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE
+            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
-
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Vera Team GPS Active")
             .setContentText("High-accuracy tracking enabled")
@@ -188,314 +178,264 @@ class LocationService : Service(), SensorEventListener {
             .build()
     }
 
-    // ========== LOCATION UPDATES ==========
+    // ========== LOCATION (GNSS) ==========
 
     private fun setupLocationCallback() {
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
-                result.lastLocation?.let { location ->
-                    processLocation(location)
-                }
+                result.lastLocation?.let { processLocation(it) }
             }
 
             override fun onLocationAvailability(availability: LocationAvailability) {
-                val isAvailable = availability.isLocationAvailable
-                Log.d(TAG, "Location availability changed: $isAvailable")
-
-                if (!isAvailable) {
-                    _locationState.value = _locationState.value.copy(isGpsAvailable = false)
+                if (!availability.isLocationAvailable) {
                     consecutiveGpsFailures++
-
-                    // Try to recover GPS
-                    if (consecutiveGpsFailures > 3) {
-                        Log.w(TAG, "Multiple GPS failures, attempting recovery...")
-                        restartLocationUpdates()
-                    }
+                    if (consecutiveGpsFailures > 3) restartLocationUpdates()
                 } else {
                     consecutiveGpsFailures = 0
-                    _locationState.value = _locationState.value.copy(isGpsAvailable = true)
                 }
             }
         }
     }
 
     private fun processLocation(location: Location) {
-        // Reject obviously bad readings
-        if (location.accuracy > MAX_ACCEPTABLE_ACCURACY || location.accuracy <= 0) {
-            Log.d(TAG, "Rejecting poor accuracy reading: ${location.accuracy}m")
-            return
-        }
+        // Reject stale or low-accuracy fixes before they reach the filter.
+        val ageNs = SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos
+        if (ageNs > STALE_FIX_NS) return
+        if (location.accuracy > MAX_ACCEPTABLE_ACCURACY || location.accuracy <= 0) return
 
-        // Update GPS health tracking
         lastValidLocationTime = System.currentTimeMillis()
         consecutiveGpsFailures = 0
 
-        // Apply Kalman filter for position smoothing
-        val filteredLocation = kalmanFilter.filter(location)
-        if (filteredLocation == null) {
-            Log.d(TAG, "Kalman filter rejected location")
-            return
+        // Position: Kalman-smoothed lat/lng.
+        val filtered = kalmanFilter.filter(location) ?: location
+        lastLat = filtered.latitude
+        lastLng = filtered.longitude
+        lastAccuracyM = filtered.accuracy
+        hasFix = true
+
+        // Speed: GNSS Doppler correction (gated). Only correct when the provider
+        // actually supplied a speed — never invent one from position deltas.
+        if (location.hasSpeed()) {
+            val sAcc = if (location.hasSpeedAccuracy() && location.speedAccuracyMetersPerSecond > 0f)
+                location.speedAccuracyMetersPerSecond.toDouble() else DEFAULT_SACC
+            lastGnssSpeedMps = location.speed.toDouble()
+            lastGnssSAcc = sAcc
+            estimator.correctGnss(location.speed.toDouble(), sAcc)
         }
 
-        // Smooth speed (convert m/s to km/h)
-        val smoothedSpeedKmh = if (location.hasSpeed() && location.speed > 0.3f) {
-            speedSmoother.smooth(location.speed) * 3.6
-        } else {
-            // If speed is very low or unavailable, set to 0
-            speedSmoother.smooth(0f)
-            0.0
+        // Heading only when fast enough to be reliable; freeze it otherwise.
+        if (location.hasBearing() && location.speed > BEARING_MIN_SPEED) {
+            travelBearingRad = Math.toRadians(location.bearing.toDouble())
+            haveBearing = true
+            lastHeadingDeg = location.bearing.toDouble()
         }
 
-        // Smooth bearing
-        val smoothedBearing = if (location.hasBearing() && location.speed > 1.0f) {
-            bearingSmoother.smooth(location.bearing)
-        } else {
-            bearingSmoother.getSmoothedBearing()
-        }
-
-        // Update state
-        _locationState.value = LocationState(
-            latitude = filteredLocation.latitude,
-            longitude = filteredLocation.longitude,
-            speed = smoothedSpeedKmh,
-            heading = smoothedBearing,
-            accuracy = filteredLocation.accuracy,
-            isGpsAvailable = true,
-            satellites = location.extras?.getInt("satellites", 0) ?: 0
-        )
-
-        // Send to Supabase (use filtered values)
-        serviceScope.launch {
-            repository.updateGpsTelemetry(
-                latitude = filteredLocation.latitude,
-                longitude = filteredLocation.longitude,
-                speed = smoothedSpeedKmh,
-                heading = smoothedBearing,
-                accuracy = filteredLocation.accuracy.toDouble(),
-                batteryLevel = getBatteryLevel(),
-                signalStrength = getSignalStrength(),
-                isOnline = true
-            )
-        }
-
-        // Log excellent accuracy readings
-        if (location.accuracy <= EXCELLENT_ACCURACY) {
-            Log.d(TAG, "Excellent GPS: ${location.accuracy}m at (${filteredLocation.latitude}, ${filteredLocation.longitude})")
+        // If there is no IMU loop to drive output, publish from here.
+        if (linearAccel == null) {
+            val now = SystemClock.elapsedRealtimeNanos()
+            val dt = if (lastGnssNanos == 0L) 0.0 else (now - lastGnssNanos) / 1e9
+            lastGnssNanos = now
+            currentDisplayKmh = estimator.displaySpeedKmh(dt)
+            publish()
+            maybeSendTelemetry()
         }
     }
 
     private fun startLocationUpdates() {
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
         ) {
             Log.e(TAG, "Location permission not granted")
             return
         }
-
-        // Check if GPS is enabled
-        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-            Log.w(TAG, "GPS is disabled - location accuracy will be limited")
-            _locationState.value = _locationState.value.copy(isGpsAvailable = false)
-        }
-
-        val locationRequest = createLocationRequest()
-
-        // Request with current settings
         try {
             fusedLocationClient.requestLocationUpdates(
-                locationRequest,
-                locationCallback,
-                Looper.getMainLooper()
+                createLocationRequest(), locationCallback, Looper.getMainLooper()
             )
-            Log.d(TAG, "Location updates started with interval: ${locationRequest.intervalMillis}ms")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start location updates: ${e.message}")
         }
-
-        // Also get last known location for quick first fix
-        fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-            location?.let {
-                if (it.accuracy <= MAX_ACCEPTABLE_ACCURACY) {
-                    Log.d(TAG, "Using last known location for quick start")
-                    processLocation(it)
-                }
-            }
+        fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+            loc?.let { if (it.accuracy in 0.01f..MAX_ACCEPTABLE_ACCURACY) processLocation(it) }
         }
     }
 
-    private fun createLocationRequest(): LocationRequest {
-        return LocationRequest.Builder(
-            Priority.PRIORITY_HIGH_ACCURACY,
-            if (isMoving) UPDATE_INTERVAL_MOVING_MS else UPDATE_INTERVAL_STATIONARY_MS
-        ).apply {
-            // Fastest interval caps the maximum update rate
-            setMinUpdateIntervalMillis(FASTEST_UPDATE_INTERVAL_MS)
-
-            // Minimum displacement to trigger update
-            setMinUpdateDistanceMeters(MIN_DISPLACEMENT_METERS)
-
-            // Don't wait for accurate location - we want fast updates and will filter ourselves
-            setWaitForAccurateLocation(false)
-
-            // Ensure location updates work even with poor accuracy
-            setGranularity(Granularity.GRANULARITY_FINE)
-
-            // For racing, we want maximum location quality
-            setMaxUpdateDelayMillis(0) // No batching
-        }.build()
-    }
+    private fun createLocationRequest(): LocationRequest =
+        LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, UPDATE_INTERVAL_MS)
+            .setMinUpdateIntervalMillis(FASTEST_UPDATE_INTERVAL_MS) // pass every fix
+            .setMinUpdateDistanceMeters(0f)                          // CRITICAL: never throttle by distance
+            .setWaitForAccurateLocation(false)
+            .setGranularity(Granularity.GRANULARITY_FINE)
+            .setMaxUpdateDelayMillis(0L)                             // no batching
+            .build()
 
     private fun stopLocationUpdates() {
         try {
             fusedLocationClient.removeLocationUpdates(locationCallback)
-            Log.d(TAG, "Location updates stopped")
         } catch (e: Exception) {
             Log.e(TAG, "Error stopping location updates: ${e.message}")
         }
     }
 
     private fun restartLocationUpdates() {
-        Log.d(TAG, "Restarting location updates...")
         stopLocationUpdates()
-
-        // Reset Kalman filter on GPS recovery
         kalmanFilter.reset()
-        speedSmoother.reset()
-        bearingSmoother.reset()
-
-        // Small delay before restart
+        estimator.reset()
+        haveBearing = false
         serviceScope.launch {
             delay(500)
-            withContext(Dispatchers.Main) {
-                startLocationUpdates()
-            }
+            withContext(Dispatchers.Main) { startLocationUpdates() }
         }
     }
 
-    // ========== SENSOR FUSION ==========
+    // ========== IMU FUSION (predict between fixes) + ZUPT ==========
 
     private fun setupSensorManager() {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
-
-        if (accelerometer == null) {
-            Log.w(TAG, "Linear acceleration sensor not available, falling back to accelerometer")
-            accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        }
+        linearAccel = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
+        rotationVector = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
     }
 
     private fun startSensorUpdates() {
-        accelerometer?.let { sensor ->
-            // Use SENSOR_DELAY_GAME for smooth motion detection
-            sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME)
-            Log.d(TAG, "Accelerometer updates started")
-        }
+        rotationVector?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
+        gyroscope?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
+        linearAccel?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
     }
 
     private fun stopSensorUpdates() {
         sensorManager.unregisterListener(this)
-        Log.d(TAG, "Sensor updates stopped")
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
-        event?.let {
-            if (it.sensor.type == Sensor.TYPE_LINEAR_ACCELERATION ||
-                it.sensor.type == Sensor.TYPE_ACCELEROMETER
-            ) {
-                // Calculate acceleration magnitude
-                val x = it.values[0]
-                val y = it.values[1]
-                val z = it.values[2]
-                val magnitude = sqrt(x * x + y * y + z * z)
-
-                // Detect movement state change
-                val wasMoving = isMoving
-                isMoving = abs(magnitude - lastAccelMagnitude) > accelThreshold ||
-                        magnitude > 1.0f // Any significant acceleration
-
-                lastAccelMagnitude = magnitude
-
-                // Adjust location request if movement state changed significantly
-                if (wasMoving != isMoving) {
-                    Log.d(TAG, "Movement state changed: moving=$isMoving")
-                    // Don't restart for racing - always use high frequency
-                }
+        event ?: return
+        when (event.sensor.type) {
+            Sensor.TYPE_ROTATION_VECTOR -> {
+                SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+                haveRotation = true
             }
+            Sensor.TYPE_GYROSCOPE -> {
+                gyroMagnitude = sqrt(
+                    event.values[0] * event.values[0] +
+                    event.values[1] * event.values[1] +
+                    event.values[2] * event.values[2]
+                ).toDouble()
+            }
+            Sensor.TYPE_LINEAR_ACCELERATION -> onLinearAcceleration(event)
         }
     }
 
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        Log.d(TAG, "Sensor accuracy changed: $accuracy")
+    private fun onLinearAcceleration(event: SensorEvent) {
+        val dt = if (lastImuNanos == 0L) 0.0 else (event.timestamp - lastImuNanos) / 1e9
+        lastImuNanos = event.timestamp
+
+        val ax = event.values[0]; val ay = event.values[1]; val az = event.values[2]
+        val accelMag = sqrt(ax * ax + ay * ay + az * az).toDouble()
+
+        // Longitudinal accel: rotate device→world (ENU), project on travel bearing.
+        val aLon = if (haveRotation && haveBearing) {
+            val east = rotationMatrix[0] * ax + rotationMatrix[1] * ay + rotationMatrix[2] * az
+            val north = rotationMatrix[3] * ax + rotationMatrix[4] * ay + rotationMatrix[5] * az
+            east * sin(travelBearingRad) + north * cos(travelBearingRad)
+        } else 0.0
+
+        estimator.predict(aLon, dt)
+
+        // Standstill detection: IMU quiet for a sustained window AND GNSS near zero.
+        val quiet = accelMag < ACCEL_QUIET && gyroMagnitude < GYRO_QUIET
+        val now = event.timestamp
+        if (quiet) {
+            if (quietSinceNanos == 0L) quietSinceNanos = now
+        } else {
+            quietSinceNanos = 0L
+        }
+        val imuStationary = quietSinceNanos != 0L && (now - quietSinceNanos) > QUIET_DURATION_NS
+        val gnssNearZero = lastGnssSpeedMps < DEADBAND_K * lastGnssSAcc
+        if (imuStationary && gnssNearZero) {
+            estimator.applyZupt()
+        }
+
+        currentDisplayKmh = estimator.displaySpeedKmh(dt)
+        publish()
+        maybeSendTelemetry()
     }
 
-    // ========== GPS HEALTH MONITORING ==========
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
+    // ========== OUTPUT ==========
+
+    private fun publish() {
+        LiveLocation.update(
+            LiveLocation.Data(
+                latitude = lastLat,
+                longitude = lastLng,
+                speedKmh = currentDisplayKmh,
+                headingDeg = lastHeadingDeg,
+                accuracyM = lastAccuracyM,
+                hasFix = hasFix,
+                updatedAtMs = System.currentTimeMillis()
+            )
+        )
+    }
+
+    private fun maybeSendTelemetry() {
+        val now = SystemClock.elapsedRealtimeNanos()
+        if (now - lastTelemetryNanos < TELEMETRY_INTERVAL_NS) return
+        lastTelemetryNanos = now
+        if (!hasFix) return
+        val lat = lastLat; val lng = lastLng; val spd = currentDisplayKmh
+        val hdg = lastHeadingDeg; val acc = lastAccuracyM.toDouble()
+        serviceScope.launch {
+            repository.updateGpsTelemetry(
+                latitude = lat, longitude = lng, speed = spd, heading = hdg,
+                accuracy = acc, batteryLevel = getBatteryLevel(),
+                signalStrength = getSignalStrength(), isOnline = true
+            )
+        }
+    }
+
+    // ========== GPS HEALTH ==========
 
     private fun startGpsHealthMonitor() {
         serviceScope.launch {
             while (isActive) {
-                delay(gpsTimeoutMs)
-
-                val timeSinceLastUpdate = System.currentTimeMillis() - lastValidLocationTime
-                if (lastValidLocationTime > 0 && timeSinceLastUpdate > gpsTimeoutMs) {
-                    Log.w(TAG, "GPS timeout - no update for ${timeSinceLastUpdate}ms")
-                    _locationState.value = _locationState.value.copy(isGpsAvailable = false)
-
-                    // Attempt recovery
-                    if (timeSinceLastUpdate > gpsTimeoutMs * 2) {
-                        restartLocationUpdates()
-                    }
-                }
+                delay(GPS_TIMEOUT_MS)
+                val since = System.currentTimeMillis() - lastValidLocationTime
+                if (lastValidLocationTime > 0 && since > GPS_TIMEOUT_MS * 2) restartLocationUpdates()
             }
         }
     }
 
-    // ========== WAKELOCK FOR BACKGROUND ==========
+    // ========== WAKELOCK ==========
 
     private fun acquireWakeLock() {
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "VeraTeam::LocationWakeLock"
-        ).apply {
-            acquire(60 * 60 * 1000L) // 1 hour max (for a race session)
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "VeraTeam::LocationWakeLock").apply {
+            acquire(60 * 60 * 1000L)
         }
-        Log.d(TAG, "WakeLock acquired")
     }
 
     private fun releaseWakeLock() {
-        wakeLock?.let {
-            if (it.isHeld) {
-                it.release()
-                Log.d(TAG, "WakeLock released")
-            }
-        }
+        wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
     }
 
-    // ========== UTILITY FUNCTIONS ==========
+    // ========== UTILITIES ==========
 
     private fun getBatteryLevel(): Int {
         val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
         val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-        return if (level >= 0 && scale > 0) {
-            (level * 100 / scale)
-        } else {
-            100
-        }
+        return if (level >= 0 && scale > 0) (level * 100 / scale) else 100
     }
 
     private fun getSignalStrength(): Int {
-        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return 0
-        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return 0
-
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = cm.activeNetwork ?: return 0
+        val caps = cm.getNetworkCapabilities(network) ?: return 0
         return when {
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> 100
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> 75
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> 100
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> 75
             else -> 50
         }
     }
