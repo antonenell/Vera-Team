@@ -91,7 +91,7 @@ const FLAG_OPTIONS: { color: FlagColor; label: string }[] = [
 type LngLatTuple = [number, number];
 
 const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }: GPSTrackProps) => {
-  const [selectedTrack, setSelectedTrack] = useState<TrackName>("stora-holm");
+  const [selectedTrack, setSelectedTrack] = useState<TrackName>("silesia-ring");
   const [editMode, setEditMode] = useState(false);
   const track = tracks[selectedTrack];
 
