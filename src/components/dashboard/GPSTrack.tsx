@@ -47,12 +47,14 @@ const getFlagColorHex = (color: FlagColor): string => {
   }
 };
 
-// A filled flag-on-a-pole, drawn so the pole base sits at the bottom edge (the
-// icon is anchored 'bottom', so the base lands exactly on the coordinate).
+// A map pin filled with the status colour (so a red full-course condition is
+// unmistakable) with a small white flag glyph. The tip is at the bottom of the
+// viewBox; the icon is anchored 'bottom', so the tip lands on the coordinate.
 const flagImageSvg = (hex: string): string =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 48 48">
-    <path d="M15 5 L15 45" fill="none" stroke="#0b0b12" stroke-width="3" stroke-linecap="round"/>
-    <path d="M15 6 L37 6 L31.5 13.5 L37 21 L15 21 Z" fill="${hex}" stroke="#0b0b12" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M24 2 C 15.16 2 8 9.16 8 18 C 8 29.5 24 47 24 47 C 24 47 40 29.5 40 18 C 40 9.16 32.84 2 24 2 Z" fill="${hex}" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+    <rect x="20" y="10.5" width="1.7" height="14.5" rx="0.85" fill="#ffffff"/>
+    <path d="M21.7 11 L30.5 11 L28 14.4 L30.5 17.8 L21.7 17.8 Z" fill="#ffffff"/>
   </svg>`;
 
 const loadFlagImage = (map: mapboxgl.Map, name: string, hex: string): Promise<void> =>

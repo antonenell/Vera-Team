@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { resolveFlagColorChange, type FlagColor } from "@/lib/flagLogic";
 
-export type FlagColor = "grey" | "yellow" | "red" | "black";
+export type { FlagColor };
 export type TrackName = "stora-holm" | "silesia-ring";
 
 /** A flag as the dashboard renders it: position + colour, sourced from the DB. */
@@ -321,16 +322,9 @@ export const useTrackFlags = (isAdmin: boolean, selectedTrack: TrackName) => {
     async (flagId: string, color: FlagColor) => {
       if (!isAdmin) return;
 
-      const current = flags[flagId]?.color;
-
-      // Red is a full-course condition: setting any flag red turns them all red.
-      if (color === "red") {
-        await setAllColors("red");
-        return;
-      }
-      // Clearing a red flag (to any other colour) resets every flag to neutral.
-      if (current === "red") {
-        await setAllColors("grey");
+      const decision = resolveFlagColorChange(flags[flagId]?.color, color);
+      if (decision.scope === "all") {
+        await setAllColors(decision.color);
         return;
       }
 
