@@ -1,10 +1,12 @@
-import { Wifi, Monitor, Zap } from "lucide-react";
+import { Wifi, Monitor, Zap, Thermometer, BatteryFull, BatteryLow } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SystemStatusProps {
   xLogOnline: boolean;
   driverDisplayOnline: boolean;
   motorRunning: boolean;
+  batteryLevel?: number;
+  batteryTemp?: number | null;
   className?: string;
 }
 
@@ -46,8 +48,18 @@ const StatusItem = ({ label, isOnline, icon }: StatusItemProps) => (
   </div>
 );
 
-const SystemStatus = ({ xLogOnline, driverDisplayOnline, motorRunning, className }: SystemStatusProps) => {
+const SystemStatus = ({ xLogOnline, driverDisplayOnline, motorRunning, batteryLevel, batteryTemp, className }: SystemStatusProps) => {
   const allOnline = xLogOnline && driverDisplayOnline && motorRunning;
+
+  // Phone readouts are only meaningful while the driver phone is live.
+  const tempStr = driverDisplayOnline && batteryTemp != null && batteryTemp > 0
+    ? `${Math.round(batteryTemp)}°C`
+    : "—";
+  const battStr = driverDisplayOnline && batteryLevel != null
+    ? `${Math.round(batteryLevel)}%`
+    : "—";
+  const battLow = batteryLevel != null && batteryLevel <= 20;
+  const tempHot = batteryTemp != null && batteryTemp >= 42;
   
   return (
     <div className={cn("glass-card relative rounded-2xl p-6 flex flex-col", className)}>
@@ -79,11 +91,29 @@ const SystemStatus = ({ xLogOnline, driverDisplayOnline, motorRunning, className
           isOnline={driverDisplayOnline} 
           icon={<Monitor className="w-5 h-5" />} 
         />
-        <StatusItem 
-          label="Motor" 
-          isOnline={motorRunning} 
-          icon={<Zap className="w-5 h-5" />} 
+        <StatusItem
+          label="Motor"
+          isOnline={motorRunning}
+          icon={<Zap className="w-5 h-5" />}
         />
+
+        {/* Phone (driver display) readouts */}
+        <div className="flex items-center gap-2 pt-3 mt-1 border-t border-border/40">
+          <div className="flex-1 flex items-center gap-2">
+            <Thermometer className={cn("w-4 h-4", tempHot ? "text-racing-red" : "text-racing-cyan")} />
+            <div className="leading-tight">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Phone Temp</p>
+              <p className={cn("text-base font-mono font-bold", tempHot ? "text-racing-red" : "text-foreground")}>{tempStr}</p>
+            </div>
+          </div>
+          <div className="flex-1 flex items-center gap-2">
+            {battLow ? <BatteryLow className="w-4 h-4 text-racing-red" /> : <BatteryFull className="w-4 h-4 text-racing-green" />}
+            <div className="leading-tight">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Battery</p>
+              <p className={cn("text-base font-mono font-bold", battLow ? "text-racing-red" : "text-foreground")}>{battStr}</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

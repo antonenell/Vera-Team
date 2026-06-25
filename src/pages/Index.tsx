@@ -43,6 +43,7 @@ const Index = () => {
     speed: gpsSpeed,
     isOnline: driverDisplayOnline,
     batteryLevel,
+    batteryTemp,
     signalStrength,
   } = useGpsTelemetry();
 
@@ -150,10 +151,12 @@ const Index = () => {
         />
 
         {/* System Status */}
-        <SystemStatus 
+        <SystemStatus
           xLogOnline={xLogOnline}
           driverDisplayOnline={driverDisplayOnline}
           motorRunning={motorRunning}
+          batteryLevel={batteryLevel}
+          batteryTemp={batteryTemp}
           className="col-span-1"
         />
 

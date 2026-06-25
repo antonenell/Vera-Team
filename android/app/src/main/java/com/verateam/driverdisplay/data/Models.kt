@@ -46,10 +46,19 @@ data class GpsTelemetry(
     val heading: Double = 0.0,
     val accuracy: Double = 0.0,
     @SerialName("battery_level") val batteryLevel: Int = 100,
+    @SerialName("battery_temp") val batteryTemp: Double? = null,
     @SerialName("signal_strength") val signalStrength: Int = 0,
     @SerialName("is_online") val isOnline: Boolean = false,
     val timestamp: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null
+)
+
+// Phone battery temperature, sent as a SEPARATE update so a missing battery_temp
+// column (migration not yet applied) can't break the main telemetry.
+@Serializable
+data class PhoneTempUpdate(
+    @SerialName("battery_temp") val batteryTemp: Double,
+    @SerialName("updated_at") val updatedAt: String
 )
 
 // For updating GPS telemetry (without id)

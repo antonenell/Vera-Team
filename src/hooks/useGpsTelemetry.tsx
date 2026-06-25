@@ -10,6 +10,7 @@ interface GpsTelemetry {
   heading: number;
   accuracy: number;
   batteryLevel: number;
+  batteryTemp: number | null;
   signalStrength: number;
   isOnline: boolean;
   timestamp: string;
@@ -23,6 +24,7 @@ export const useGpsTelemetry = () => {
     heading: 0,
     accuracy: 0,
     batteryLevel: 100,
+    batteryTemp: null,
     signalStrength: 0,
     isOnline: false,
     timestamp: new Date().toISOString(),
@@ -46,6 +48,7 @@ export const useGpsTelemetry = () => {
           heading: data.heading,
           accuracy: data.accuracy,
           batteryLevel: data.battery_level,
+          batteryTemp: (data as { battery_temp?: number }).battery_temp ?? null,
           signalStrength: data.signal_strength,
           isOnline: data.is_online,
           timestamp: data.timestamp,
@@ -79,6 +82,7 @@ export const useGpsTelemetry = () => {
               heading: newData.heading,
               accuracy: newData.accuracy,
               batteryLevel: newData.battery_level,
+              batteryTemp: newData.battery_temp ?? null,
               signalStrength: newData.signal_strength,
               isOnline: newData.is_online,
               timestamp: newData.timestamp,
@@ -99,6 +103,7 @@ export const useGpsTelemetry = () => {
     heading: telemetry.heading,
     accuracy: telemetry.accuracy,
     batteryLevel: telemetry.batteryLevel,
+    batteryTemp: telemetry.batteryTemp,
     signalStrength: telemetry.signalStrength,
     isOnline: telemetry.isOnline,
     isLoading,

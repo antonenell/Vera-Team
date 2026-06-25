@@ -102,6 +102,26 @@ class Repository {
         }
     }
 
+    /**
+     * Update only the phone battery temperature. Sent separately from the main
+     * telemetry so a missing `battery_temp` column (migration not applied yet)
+     * fails on its own and never breaks the position/speed telemetry.
+     */
+    suspend fun updatePhoneTemp(batteryTempC: Double) {
+        try {
+            val update = PhoneTempUpdate(
+                batteryTemp = batteryTempC,
+                updatedAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now())
+            )
+            supabase.from("gps_telemetry")
+                .update(update) {
+                    filter { eq("id", GPS_TELEMETRY_ID) }
+                }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating phone temp (run the battery_temp migration?): ${e.message}")
+        }
+    }
+
     // Fetch GPS telemetry
     suspend fun fetchGpsTelemetry(): GpsTelemetry? {
         return try {

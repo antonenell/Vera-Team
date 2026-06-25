@@ -109,6 +109,7 @@ class LocationService : Service(), SensorEventListener {
     @Volatile private var currentDisplayKmh = 0.0
     private var lastGnssNanos = 0L
     private var lastTelemetryNanos = 0L
+    private var lastTempSentNanos = 0L
 
     // GPS health monitoring
     private var lastValidLocationTime = 0L
@@ -135,6 +136,7 @@ class LocationService : Service(), SensorEventListener {
         private const val QUIET_DURATION_NS = 350_000_000L    // 0.35 s quiet ⇒ stationary
 
         private const val TELEMETRY_INTERVAL_NS = 200_000_000L // throttle Supabase to ~5 Hz
+        private const val TEMP_INTERVAL_NS = 5_000_000_000L    // phone temp changes slowly: ~0.2 Hz
     }
 
     override fun onCreate() {
@@ -304,6 +306,20 @@ class LocationService : Service(), SensorEventListener {
         linearAccel = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
         rotationVector = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        logSensorInventory()
+    }
+
+    /** One-time capability check — logs every sensor and the environmental ones we
+     *  might use for a real cabin temperature. Filter logcat by tag "SensorCheck". */
+    private fun logSensorInventory() {
+        val all = sensorManager.getSensorList(Sensor.TYPE_ALL)
+        Log.i("SensorCheck", "===== ${all.size} sensors on this device =====")
+        all.forEach { Log.i("SensorCheck", "type=${it.type} ${it.stringType}  '${it.name}'  vendor=${it.vendor}") }
+        fun present(t: Int) = if (sensorManager.getDefaultSensor(t) != null) "YES" else "no"
+        Log.i("SensorCheck", "Ambient temperature: ${present(Sensor.TYPE_AMBIENT_TEMPERATURE)}")
+        Log.i("SensorCheck", "Relative humidity:   ${present(Sensor.TYPE_RELATIVE_HUMIDITY)}")
+        Log.i("SensorCheck", "Pressure (barometer): ${present(Sensor.TYPE_PRESSURE)}")
+        Log.i("SensorCheck", "Light:               ${present(Sensor.TYPE_LIGHT)}")
     }
 
     private fun startSensorUpdates() {
@@ -398,18 +414,29 @@ class LocationService : Service(), SensorEventListener {
     }
 
     private fun maybeSendTelemetry() {
-        val now = SystemClock.elapsedRealtimeNanos()
-        if (now - lastTelemetryNanos < TELEMETRY_INTERVAL_NS) return
-        lastTelemetryNanos = now
         if (!hasFix) return
-        val lat = lastLat; val lng = lastLng; val spd = currentDisplayKmh
-        val hdg = lastHeadingDeg; val acc = lastAccuracyM.toDouble()
-        serviceScope.launch {
-            repository.updateGpsTelemetry(
-                latitude = lat, longitude = lng, speed = spd, heading = hdg,
-                accuracy = acc, batteryLevel = getBatteryLevel(),
-                signalStrength = getSignalStrength(), isOnline = true
-            )
+        val now = SystemClock.elapsedRealtimeNanos()
+
+        // Main telemetry (position / speed / battery %) at ~5 Hz.
+        if (now - lastTelemetryNanos >= TELEMETRY_INTERVAL_NS) {
+            lastTelemetryNanos = now
+            val lat = lastLat; val lng = lastLng; val spd = currentDisplayKmh
+            val hdg = lastHeadingDeg; val acc = lastAccuracyM.toDouble()
+            serviceScope.launch {
+                repository.updateGpsTelemetry(
+                    latitude = lat, longitude = lng, speed = spd, heading = hdg,
+                    accuracy = acc, batteryLevel = getBatteryLevel(),
+                    signalStrength = getSignalStrength(), isOnline = true
+                )
+            }
+        }
+
+        // Phone battery temperature: separate, slow, resilient (a missing
+        // battery_temp column can't break the main telemetry above).
+        if (now - lastTempSentNanos >= TEMP_INTERVAL_NS) {
+            lastTempSentNanos = now
+            val tempC = getBatteryTemp()
+            if (!tempC.isNaN()) serviceScope.launch { repository.updatePhoneTemp(tempC) }
         }
     }
 
@@ -448,6 +475,13 @@ class LocationService : Service(), SensorEventListener {
         val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
         val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
         return if (level >= 0 && scale > 0) (level * 100 / scale) else 100
+    }
+
+    /** Battery (≈ phone) temperature in °C — the only thermometer a normal app can read. */
+    private fun getBatteryTemp(): Double {
+        val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val tenths = batteryIntent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE) ?: Int.MIN_VALUE
+        return if (tenths != Int.MIN_VALUE) tenths / 10.0 else Double.NaN
     }
 
     private fun getSignalStrength(): Int {
