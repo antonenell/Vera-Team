@@ -197,17 +197,17 @@ export const useTrackFlags = (isAdmin: boolean, selectedTrack: TrackName) => {
           ? crypto.randomUUID()
           : `flag-${Date.now()}-${Math.round(lng * 1e5)}`;
 
-      // Optimistic insert.
+      // Optimistic insert. New flags start as yellow (caution).
       markDirty(flagId);
       setFlags((prev) => ({
         ...prev,
-        [flagId]: { flagId, lng, lat, color: "grey" },
+        [flagId]: { flagId, lng, lat, color: "yellow" },
       }));
 
       const { error } = await supabase.from("track_flags").insert({
         track_id: selectedTrack,
         flag_id: flagId,
-        color: "grey",
+        color: "yellow",
         lng,
         lat,
       });
@@ -321,14 +321,14 @@ export const useTrackFlags = (isAdmin: boolean, selectedTrack: TrackName) => {
       const next: Record<string, FlagData> = {};
       Object.values(prev).forEach((f) => {
         markDirty(f.flagId);
-        next[f.flagId] = { ...f, color: "grey" };
+        next[f.flagId] = { ...f, color: "yellow" };
       });
       return next;
     });
 
     const { error } = await supabase
       .from("track_flags")
-      .update({ color: "grey", updated_at: new Date().toISOString() })
+      .update({ color: "yellow", updated_at: new Date().toISOString() })
       .eq("track_id", selectedTrack);
 
     if (error) {

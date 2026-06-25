@@ -110,6 +110,27 @@ interface MarkerRefs {
   del: HTMLButtonElement;
 }
 
+// Flags are anchored at their base (bottom-centre) on the click point. This
+// offset keeps the colour popup glued to the flag no matter which side Mapbox
+// auto-picks to keep it in view, so it never drifts off to the side.
+const FLAG_POPUP_OFFSET: Record<string, [number, number]> = {
+  top: [0, 0],
+  bottom: [0, -46],
+  left: [22, -24],
+  right: [-22, -24],
+  center: [0, -24],
+  "top-left": [14, 0],
+  "top-right": [-14, 0],
+  "bottom-left": [14, -46],
+  "bottom-right": [-14, -46],
+};
+
+// The only flag colours the marshals use.
+const FLAG_OPTIONS: { color: FlagColor; label: string }[] = [
+  { color: "yellow", label: "Caution" },
+  { color: "red", label: "Danger" },
+];
+
 const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }: GPSTrackProps) => {
   const [selectedTrack, setSelectedTrack] = useState<TrackName>("stora-holm");
   const [editMode, setEditMode] = useState(false);
@@ -159,21 +180,14 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
     const content = document.createElement("div");
     content.style.cssText = "display:flex;flex-direction:column;gap:4px;padding:8px;";
 
-    const options: { color: FlagColor; label: string }[] = [
-      { color: "grey", label: "Neutral" },
-      { color: "yellow", label: "Caution" },
-      { color: "red", label: "Danger" },
-      { color: "black", label: "Disqualified" },
-    ];
-
     const popup = new mapboxgl.Popup({
       closeButton: false,
       closeOnClick: true,
-      offset: 15,
+      offset: FLAG_POPUP_OFFSET,
       className: "flag-popup-custom",
     });
 
-    options.forEach(({ color, label }) => {
+    FLAG_OPTIONS.forEach(({ color, label }) => {
       const btn = document.createElement("button");
       btn.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 12px;background:transparent;border:none;border-radius:4px;color:hsl(210 40% 98%);font-size:12px;cursor:pointer;transition:background 0.2s;`;
       btn.innerHTML = `<span style="width:12px;height:12px;border-radius:50%;background:${getFlagColorHex(color)};border:1px solid rgba(255,255,255,0.2);"></span>${label}`;
@@ -285,7 +299,7 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
 
       if (!refs) {
         const { el, icon, del } = createFlagElement(flag.color);
-        const marker = new mapboxgl.Marker({ element: el, draggable: false })
+        const marker = new mapboxgl.Marker({ element: el, draggable: false, anchor: "bottom" })
           .setLngLat([flag.lng, flag.lat])
           .addTo(m);
 
@@ -413,7 +427,7 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
               size="icon"
               className="h-6 w-6"
               onClick={resetFlags}
-              title="Reset all flag colors"
+              title="Set all flags to yellow"
             >
               <RotateCcw className="w-3 h-3" />
             </Button>
@@ -447,7 +461,7 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
       {/* Flag legend with frosted glass effect */}
       <div className="mt-3 p-3 rounded-xl bg-background/30 backdrop-blur-md border border-border/30 shadow-lg">
         <div className="flex items-center gap-3 justify-center">
-          {(["grey", "yellow", "red", "black"] as FlagColor[]).map((color) => (
+          {(["yellow", "red"] as FlagColor[]).map((color) => (
             <div key={color} className="flex items-center gap-1.5">
               <Flag
                 className="w-4 h-4"
