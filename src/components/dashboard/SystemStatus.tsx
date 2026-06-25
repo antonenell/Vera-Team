@@ -1,10 +1,8 @@
-import { Wifi, Monitor, Zap, Thermometer, BatteryFull, BatteryLow } from "lucide-react";
+import { Wifi, Monitor, Thermometer, BatteryFull, BatteryLow } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SystemStatusProps {
-  xLogOnline: boolean;
   driverDisplayOnline: boolean;
-  motorRunning: boolean;
   batteryLevel?: number;
   batteryTemp?: number | null;
   className?: string;
@@ -48,8 +46,8 @@ const StatusItem = ({ label, isOnline, icon }: StatusItemProps) => (
   </div>
 );
 
-const SystemStatus = ({ xLogOnline, driverDisplayOnline, motorRunning, batteryLevel, batteryTemp, className }: SystemStatusProps) => {
-  const allOnline = xLogOnline && driverDisplayOnline && motorRunning;
+const SystemStatus = ({ driverDisplayOnline, batteryLevel, batteryTemp, className }: SystemStatusProps) => {
+  const allOnline = driverDisplayOnline;
 
   // Phone readouts are only meaningful while the driver phone is live.
   const tempStr = driverDisplayOnline && batteryTemp != null && batteryTemp > 0
@@ -81,20 +79,10 @@ const SystemStatus = ({ xLogOnline, driverDisplayOnline, motorRunning, batteryLe
       </div>
       
       <div className="flex-1 flex flex-col justify-end gap-4">
-        <StatusItem 
-          label="X-Log" 
-          isOnline={xLogOnline} 
-          icon={<Wifi className="w-5 h-5" />} 
-        />
-        <StatusItem 
-          label="Driver Display" 
-          isOnline={driverDisplayOnline} 
-          icon={<Monitor className="w-5 h-5" />} 
-        />
         <StatusItem
-          label="Motor"
-          isOnline={motorRunning}
-          icon={<Zap className="w-5 h-5" />}
+          label="Driver Display"
+          isOnline={driverDisplayOnline}
+          icon={<Monitor className="w-5 h-5" />}
         />
 
         {/* Phone (driver display) readouts */}

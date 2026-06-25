@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
-import { Gauge, Thermometer, Activity, User, LogOut, LogIn } from "lucide-react";
+import { Gauge, Activity, User, LogOut, LogIn } from "lucide-react";
 import StatCard from "@/components/dashboard/StatCard";
 import GPSTrack from "@/components/dashboard/GPSTrack";
 import SystemStatus from "@/components/dashboard/SystemStatus";
+import MeanSpeedCard from "@/components/dashboard/MeanSpeedCard";
 import LapTimes from "@/components/dashboard/LapTimes";
 import RaceTimer from "@/components/dashboard/RaceTimer";
 import { VoiceChat } from "@/components/dashboard/VoiceChat";
@@ -11,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useRaceState } from "@/hooks/useRaceState";
 import { useGpsTelemetry } from "@/hooks/useGpsTelemetry";
+import { useTargetMeanSpeed } from "@/hooks/useTargetMeanSpeed";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
 import chalmersLogo from "@/assets/chalmersverateam.svg";
 
@@ -50,12 +52,18 @@ const Index = () => {
   // Voice chat — single Room instance shared between the card and the audio mount
   const voice = useVoiceChat();
 
-  // Other telemetry data - defaults for when not connected
-  const rpm = 0;
+  // Target average speed needed over the remaining laps (same figure as the app)
+  const meanSpeedTarget = useTargetMeanSpeed({
+    speedKmh: gpsSpeed,
+    isOnline: driverDisplayOnline,
+    isRunning,
+    lapTimes,
+    totalLaps,
+    targetRaceTimeSec: targetRaceTime,
+    targetLapTimeSec: targetLapTime,
+  });
+
   const speed = gpsSpeed; // Use GPS speed from phone
-  const temperature = null; // null = not connected
-  const motorRunning = false;
-  const xLogOnline = false;
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-6 lg:p-8 relative overflow-hidden">
@@ -129,32 +137,12 @@ const Index = () => {
           className="col-span-1"
         />
 
-        {/* RPM */}
-        <StatCard
-          title="Motor RPM"
-          value={Math.round(rpm).toLocaleString()}
-          icon={Activity}
-          iconColor="text-racing-orange"
-          valueColor="text-racing-orange"
-          className="col-span-1"
-        />
-
-        {/* Temperature */}
-        <StatCard
-          title="Motor Temp"
-          value={temperature !== null ? Math.round(temperature) : "--"}
-          unit={temperature !== null ? "°C" : ""}
-          icon={Thermometer}
-          iconColor={temperature !== null && temperature > 85 ? "text-racing-red" : "text-muted-foreground"}
-          valueColor={temperature !== null && temperature > 85 ? "text-racing-red" : "text-muted-foreground"}
-          className="col-span-1"
-        />
+        {/* Target Avg — mean speed needed over remaining laps (mirrors the app) */}
+        <MeanSpeedCard target={meanSpeedTarget} className="col-span-1" />
 
         {/* System Status */}
         <SystemStatus
-          xLogOnline={xLogOnline}
           driverDisplayOnline={driverDisplayOnline}
-          motorRunning={motorRunning}
           batteryLevel={batteryLevel}
           batteryTemp={batteryTemp}
           className="col-span-1"
