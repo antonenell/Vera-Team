@@ -39,7 +39,7 @@ private const val TAG = "TrackMap"
 private const val MAPBOX_STYLE_URL = "mapbox://styles/carlberge/cmj42ghcf009601r47hgyaiku"
 
 // Map rotation: a positive bearing rotates the map content counter-clockwise.
-private const val MAP_BEARING = 15.0
+private const val MAP_BEARING = 10.0
 
 /** Camera config per track (flag positions now come live from the database). */
 data class TrackConfig(
