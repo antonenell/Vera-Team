@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from "react";
 import { MapPin, Flag, RotateCcw, ChevronDown, Pencil, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,15 @@ interface GPSTrackProps {
   className?: string;
   isAdmin?: boolean;
   isCarOnline?: boolean;
+  /** True while the dashboard grid is in layout-edit mode — hides this card's own
+   *  flag-editing controls so the only affordance is the grid Move/resize. */
+  gridEditMode?: boolean;
+}
+
+/** Imperative handle so the grid can re-measure / re-frame the Mapbox canvas after a resize. */
+export interface GPSTrackHandle {
+  resizeMap: () => void;
+  refitMap: () => void;
 }
 
 const flagColors: Record<FlagColor, string> = {
@@ -90,7 +99,7 @@ const FLAG_OPTIONS: { color: FlagColor; label: string }[] = [
 
 type LngLatTuple = [number, number];
 
-const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }: GPSTrackProps) => {
+const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, className, isAdmin = false, isCarOnline = false, gridEditMode = false }, ref) => {
   const [selectedTrack, setSelectedTrack] = useState<TrackName>("silesia-ring");
   const [editMode, setEditMode] = useState(false);
   const track = tracks[selectedTrack];
@@ -98,6 +107,39 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const carMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const resizeRafRef = useRef<number | null>(null);
+  const trackBoundsRef = useRef(track.bounds);
+  useEffect(() => { trackBoundsRef.current = track.bounds; }, [track.bounds]);
+
+  // rAF-debounced, zero-size-guarded Mapbox re-measure (shared by the ResizeObserver,
+  // the window resize, and the grid's drag/resize stops). When `refit` is set it also
+  // re-frames the whole track, so reshaping the card to a new aspect ratio after a
+  // grid resize doesn't crop the circuit out of view.
+  const runResize = useCallback((refit: boolean) => {
+    if (resizeRafRef.current != null) cancelAnimationFrame(resizeRafRef.current);
+    resizeRafRef.current = requestAnimationFrame(() => {
+      resizeRafRef.current = null;
+      const m = map.current;
+      const el = mapContainer.current;
+      if (!m || !el || el.clientWidth === 0 || el.clientHeight === 0) return;
+      m.resize();
+      if (refit) m.fitBounds(trackBoundsRef.current, { padding: 10, duration: 0 });
+    });
+  }, []);
+
+  // Plain (no-refit) re-measure with a stable identity for listeners/observers.
+  const scheduleResize = useCallback(() => runResize(false), [runResize]);
+
+  useImperativeHandle(ref, () => ({
+    resizeMap: () => runResize(false),
+    refitMap: () => runResize(true),
+  }), [runResize]);
+
+  // While the grid is being rearranged, suppress this card's own flag-edit mode so it
+  // doesn't compete with the grid's Move/resize affordances.
+  useEffect(() => {
+    if (gridEditMode && editMode) setEditMode(false);
+  }, [gridEditMode, editMode]);
 
   const { flags, addFlag, moveFlag, deleteFlag, updateFlagColor, resetFlags } =
     useTrackFlags(isAdmin, selectedTrack);
@@ -197,6 +239,10 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
 
+    // Guards the async onLoad continuation against the map being removed (e.g. the
+    // user navigates away) while the flag images are still decoding.
+    let disposed = false;
+
     mapboxgl.accessToken = MAPBOX_TOKEN;
     const m = new mapboxgl.Map({
       container: mapContainer.current,
@@ -207,8 +253,9 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
     });
     map.current = m;
 
-    const resizeObserver = new ResizeObserver(() => m.resize());
+    const resizeObserver = new ResizeObserver(scheduleResize);
     resizeObserver.observe(mapContainer.current);
+    window.addEventListener("resize", scheduleResize);
 
     const canvas = () => m.getCanvas();
 
@@ -240,6 +287,9 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
         loadFlagImage(m, "flag-grey", getFlagColorHex("grey")),
         loadFlagImage(m, "flag-black", getFlagColorHex("black")),
       ]);
+      // Bail if the map was removed while the images were decoding — touching a
+      // removed map's style throws and would corrupt readyRef.
+      if (disposed || map.current !== m) return;
       if (!m.getSource(SOURCE_ID)) {
         m.addSource(SOURCE_ID, { type: "geojson", data: buildFeatureCollection() });
       }
@@ -396,7 +446,10 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
       .addTo(m);
 
     return () => {
+      disposed = true;
       resizeObserver.disconnect();
+      window.removeEventListener("resize", scheduleResize);
+      if (resizeRafRef.current != null) cancelAnimationFrame(resizeRafRef.current);
       window.removeEventListener("mousemove", onWinMove);
       window.removeEventListener("mouseup", onWinUp);
       readyRef.current = false;
@@ -487,7 +540,7 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        {isAdmin && (
+        {isAdmin && !gridEditMode && (
           <div className="flex items-center gap-1">
             <Button
               variant={editMode ? "default" : "ghost"}
@@ -525,7 +578,7 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
             border-bottom-color: hsl(222.2 47.4% 11.2%);
           }
         `}</style>
-        <div ref={mapContainer} className="absolute inset-0 [&_.mapboxgl-ctrl-logo]:hidden" />
+        <div ref={mapContainer} className="no-drag absolute inset-0 [&_.mapboxgl-ctrl-logo]:hidden" />
         {isAdmin && editMode && (
           <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full bg-background/80 backdrop-blur-md border border-border/40 shadow-lg text-[11px] text-foreground whitespace-nowrap pointer-events-none">
             Click map to add · drag flag to move · click flag to recolour / delete
@@ -554,6 +607,8 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
       </div>
     </div>
   );
-};
+});
+
+GPSTrack.displayName = "GPSTrack";
 
 export default GPSTrack;
