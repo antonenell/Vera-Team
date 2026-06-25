@@ -14,6 +14,9 @@ import { useTrackFlags, tracks, TrackName, FlagColor, FlagData } from "@/hooks/u
 
 const MAPBOX_TOKEN = "pk.eyJ1IjoiY2FybGJlcmdlIiwiYSI6ImNsMnh3OXZrYTBsNzUzaWp6NzlvdDM4bzgifQ.YiaCxeUA5RaJn7071yd42A";
 
+const SOURCE_ID = "flags-source";
+const LAYER_ID = "flags-layer";
+
 interface GPSTrackProps {
   position: { lat: number; lng: number };
   className?: string;
@@ -44,98 +47,45 @@ const getFlagColorHex = (color: FlagColor): string => {
   }
 };
 
-const flagSvg = (hex: string): string =>
-  `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${hex}" stroke="${hex}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>`;
+// A filled flag-on-a-pole, drawn so the pole base sits at the bottom edge (the
+// icon is anchored 'bottom', so the base lands exactly on the coordinate).
+const flagImageSvg = (hex: string): string =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 48 48">
+    <path d="M15 5 L15 45" fill="none" stroke="#0b0b12" stroke-width="3" stroke-linecap="round"/>
+    <path d="M15 6 L37 6 L31.5 13.5 L37 21 L15 21 Z" fill="${hex}" stroke="#0b0b12" stroke-width="2.5" stroke-linejoin="round"/>
+  </svg>`;
 
-/** DOM for a single flag marker: a frosted box holding the flag icon plus a
- *  delete badge that is only revealed in edit mode. */
-const createFlagElement = (color: FlagColor) => {
-  const el = document.createElement("div");
-  el.className = "flag-marker";
-  // Must stay position:absolute (top/left 0) like Mapbox's own marker class —
-  // an inline position:relative here puts the flag at its document-flow spot
-  // before the transform, which scatters markers and detaches their popups.
-  // The absolute box is still a positioning context for the delete badge.
-  el.style.cssText = `
-    position: absolute;
-    top: 0;
-    left: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    background: rgba(30, 30, 40, 0.6);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  `;
+const loadFlagImage = (map: mapboxgl.Map, name: string, hex: string): Promise<void> =>
+  new Promise((resolve) => {
+    if (map.hasImage(name)) return resolve();
+    const img = new Image(96, 96);
+    img.onload = () => {
+      if (!map.hasImage(name)) map.addImage(name, img, { pixelRatio: 2 });
+      resolve();
+    };
+    img.onerror = () => resolve();
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(flagImageSvg(hex));
+  });
 
-  const icon = document.createElement("div");
-  icon.style.cssText = "display:flex;align-items:center;justify-content:center;pointer-events:none;";
-  icon.innerHTML = flagSvg(getFlagColorHex(color));
-  el.appendChild(icon);
-
-  const del = document.createElement("button");
-  del.className = "flag-delete";
-  del.setAttribute("aria-label", "Delete flag");
-  del.innerHTML = "&times;";
-  del.style.cssText = `
-    position: absolute;
-    top: -8px;
-    right: -8px;
-    width: 18px;
-    height: 18px;
-    padding: 0;
-    border: 1px solid white;
-    border-radius: 50%;
-    background: #DC2626;
-    color: white;
-    font-size: 13px;
-    line-height: 1;
-    cursor: pointer;
-    display: none;
-    align-items: center;
-    justify-content: center;
-  `;
-  // Stop a press on the badge from entering Mapbox's marker-drag state — the
-  // map-level mousedown/touchstart handler only checks element.contains(target),
-  // so without this a slightly-dragged delete press relocates the flag instead.
-  del.addEventListener("mousedown", (e) => e.stopPropagation());
-  del.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: true });
-  el.appendChild(del);
-
-  return { el, icon, del };
-};
-
-interface MarkerRefs {
-  marker: mapboxgl.Marker;
-  icon: HTMLDivElement;
-  del: HTMLButtonElement;
-}
-
-// Flags are anchored at their base (bottom-centre) on the click point. This
-// offset keeps the colour popup glued to the flag no matter which side Mapbox
-// auto-picks to keep it in view, so it never drifts off to the side.
+// Keeps the colour popup glued to the flag whichever side Mapbox opens it.
 const FLAG_POPUP_OFFSET: Record<string, [number, number]> = {
   top: [0, 0],
   bottom: [0, -46],
-  left: [22, -24],
-  right: [-22, -24],
+  left: [20, -24],
+  right: [-20, -24],
   center: [0, -24],
-  "top-left": [14, 0],
-  "top-right": [-14, 0],
-  "bottom-left": [14, -46],
-  "bottom-right": [-14, -46],
+  "top-left": [12, 0],
+  "top-right": [-12, 0],
+  "bottom-left": [12, -46],
+  "bottom-right": [-12, -46],
 };
 
-// The only flag colours the marshals use.
 const FLAG_OPTIONS: { color: FlagColor; label: string }[] = [
   { color: "yellow", label: "Caution" },
   { color: "red", label: "Danger" },
 ];
+
+type LngLatTuple = [number, number];
 
 const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }: GPSTrackProps) => {
   const [selectedTrack, setSelectedTrack] = useState<TrackName>("stora-holm");
@@ -144,20 +94,13 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
 
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
-  const markersRef = useRef<Map<string, MarkerRefs>>(new Map());
   const carMarkerRef = useRef<mapboxgl.Marker | null>(null);
-  // Flag currently being dragged — its position must not be reconciled from
-  // under the cursor if a realtime update arrives mid-drag.
-  const draggingIdRef = useRef<string | null>(null);
-  // The single open colour popup, so opening another doesn't stack them.
-  const colorPopupRef = useRef<mapboxgl.Popup | null>(null);
-  // Timestamp of the last placed flag, to swallow the 2nd click of a double-click.
-  const lastAddRef = useRef(0);
 
   const { flags, addFlag, moveFlag, deleteFlag, updateFlagColor, resetFlags } =
     useTrackFlags(isAdmin, selectedTrack);
 
-  // Refs so the long-lived marker/map event handlers always see current values.
+  // Refs so the once-attached Mapbox event handlers always see current values.
+  const flagsRef = useRef(flags);
   const isAdminRef = useRef(isAdmin);
   const editModeRef = useRef(editMode);
   const addFlagRef = useRef(addFlag);
@@ -172,19 +115,30 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
   useEffect(() => { deleteFlagRef.current = deleteFlag; }, [deleteFlag]);
   useEffect(() => { updateFlagColorRef.current = updateFlagColor; }, [updateFlagColor]);
 
-  // Leaving admin (e.g. sign-out) must also leave edit mode.
+  // Drag state for moving a flag.
+  const draggingIdRef = useRef<string | null>(null);
+  const dragLngLatRef = useRef<LngLatTuple | null>(null);
+  const dragMovedRef = useRef(false);
+  const dragStartPointRef = useRef<{ x: number; y: number } | null>(null);
+  // Pushes the current flags (with any live drag override) into the GL source.
+  const refreshSourceRef = useRef<() => void>(() => {});
+  const readyRef = useRef(false);
+  const colorPopupRef = useRef<mapboxgl.Popup | null>(null);
+  const popupFlagIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!isAdmin && editMode) setEditMode(false);
   }, [isAdmin, editMode]);
 
-  // Open the colour picker popup for a flag (admin, non-edit mode).
-  const openColorPopup = (flagId: string, lngLat: [number, number]) => {
-    if (!map.current) return;
-    // Close any popup already open — marker clicks stopPropagation, which defeats
-    // Mapbox's own closeOnClick, so we manage single-popup ourselves.
+  // Colour/Delete popup, anchored to the flag's coordinate so it stays locked
+  // to that flag while the map zooms or pans.
+  const openFlagPopup = (flagId: string, coord: LngLatTuple, editable: boolean) => {
+    const m = map.current;
+    if (!m) return;
     colorPopupRef.current?.remove();
+
     const content = document.createElement("div");
-    content.style.cssText = "display:flex;flex-direction:column;gap:4px;padding:8px;";
+    content.style.cssText = "display:flex;flex-direction:column;gap:2px;padding:6px;min-width:120px;";
 
     const popup = new mapboxgl.Popup({
       closeButton: false,
@@ -195,7 +149,7 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
 
     FLAG_OPTIONS.forEach(({ color, label }) => {
       const btn = document.createElement("button");
-      btn.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 12px;background:transparent;border:none;border-radius:4px;color:hsl(210 40% 98%);font-size:12px;cursor:pointer;transition:background 0.2s;`;
+      btn.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 10px;background:transparent;border:none;border-radius:4px;color:hsl(210 40% 98%);font-size:12px;cursor:pointer;width:100%;text-align:left;";
       btn.innerHTML = `<span style="width:12px;height:12px;border-radius:50%;background:${getFlagColorHex(color)};border:1px solid rgba(255,255,255,0.2);"></span>${label}`;
       btn.addEventListener("mouseenter", () => { btn.style.background = "hsl(217.2 32.6% 17.5%)"; });
       btn.addEventListener("mouseleave", () => { btn.style.background = "transparent"; });
@@ -207,10 +161,32 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
       content.appendChild(btn);
     });
 
-    popup.setDOMContent(content).setLngLat(lngLat).addTo(map.current);
+    if (editable) {
+      const sep = document.createElement("div");
+      sep.style.cssText = "height:1px;background:hsl(217.2 32.6% 17.5%);margin:2px 0;";
+      content.appendChild(sep);
+
+      const del = document.createElement("button");
+      del.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 10px;background:transparent;border:none;border-radius:4px;color:#f87171;font-size:12px;cursor:pointer;width:100%;text-align:left;";
+      del.innerHTML = `<span style="font-size:14px;line-height:1;">&times;</span> Delete flag`;
+      del.addEventListener("mouseenter", () => { del.style.background = "hsl(217.2 32.6% 17.5%)"; });
+      del.addEventListener("mouseleave", () => { del.style.background = "transparent"; });
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteFlagRef.current(flagId);
+        popup.remove();
+      });
+      content.appendChild(del);
+    }
+
+    popup.setDOMContent(content).setLngLat(coord).addTo(m);
     colorPopupRef.current = popup;
+    popupFlagIdRef.current = flagId;
     popup.on("close", () => {
-      if (colorPopupRef.current === popup) colorPopupRef.current = null;
+      if (colorPopupRef.current === popup) {
+        colorPopupRef.current = null;
+        popupFlagIdRef.current = null;
+      }
     });
   };
 
@@ -219,7 +195,6 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
     if (!mapContainer.current || map.current) return;
 
     mapboxgl.accessToken = MAPBOX_TOKEN;
-
     const m = new mapboxgl.Map({
       container: mapContainer.current,
       style: "mapbox://styles/carlberge/cmj42ghcf009601r47hgyaiku/draft",
@@ -229,35 +204,189 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
     });
     map.current = m;
 
-    const resizeObserver = new ResizeObserver(() => {
-      m.resize();
-    });
+    const resizeObserver = new ResizeObserver(() => m.resize());
     resizeObserver.observe(mapContainer.current);
 
-    // Click on empty map (edit mode + admin) places a new flag. Mapbox fires a
-    // `click` for each half of a double-click, so swallow a 2nd click that lands
-    // within 300ms to avoid placing two stacked flags.
-    const onMapClick = (e: mapboxgl.MapMouseEvent) => {
-      if (!isAdminRef.current || !editModeRef.current) return;
-      const now = Date.now();
-      if (now - lastAddRef.current < 300) return;
-      lastAddRef.current = now;
+    const canvas = () => m.getCanvas();
+
+    const buildFeatureCollection = (): GeoJSON.FeatureCollection => ({
+      type: "FeatureCollection",
+      features: Object.values(flagsRef.current).map((f) => {
+        const dragging = draggingIdRef.current === f.flagId && dragLngLatRef.current;
+        const coordinates: LngLatTuple = dragging ? (dragLngLatRef.current as LngLatTuple) : [f.lng, f.lat];
+        return {
+          type: "Feature",
+          properties: { flagId: f.flagId, color: f.color },
+          geometry: { type: "Point", coordinates },
+        };
+      }),
+    });
+
+    const refreshSource = () => {
+      const src = m.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
+      if (src) src.setData(buildFeatureCollection());
+    };
+    refreshSourceRef.current = refreshSource;
+
+    const editable = () => isAdminRef.current && editModeRef.current;
+
+    const onLoad = async () => {
+      await Promise.all([
+        loadFlagImage(m, "flag-yellow", getFlagColorHex("yellow")),
+        loadFlagImage(m, "flag-red", getFlagColorHex("red")),
+        loadFlagImage(m, "flag-grey", getFlagColorHex("grey")),
+        loadFlagImage(m, "flag-black", getFlagColorHex("black")),
+      ]);
+      if (!m.getSource(SOURCE_ID)) {
+        m.addSource(SOURCE_ID, { type: "geojson", data: buildFeatureCollection() });
+      }
+      if (!m.getLayer(LAYER_ID)) {
+        m.addLayer({
+          id: LAYER_ID,
+          type: "symbol",
+          source: SOURCE_ID,
+          layout: {
+            "icon-image": [
+              "match",
+              ["get", "color"],
+              "red", "flag-red",
+              "grey", "flag-grey",
+              "black", "flag-black",
+              "flag-yellow",
+            ],
+            "icon-size": 0.92,
+            "icon-anchor": "bottom",
+            "icon-allow-overlap": true,   // flags may sit on top of each other
+            "icon-ignore-placement": true,
+          },
+        });
+      }
+      readyRef.current = true;
+      refreshSource();
+    };
+    m.on("load", onLoad);
+
+    // --- Click: open a flag's popup, or add a flag on empty map (edit mode) ---
+    const onClick = (e: mapboxgl.MapMouseEvent) => {
+      const feats = m.queryRenderedFeatures(e.point, { layers: [LAYER_ID] });
+      if (feats.length) {
+        if (!isAdminRef.current) return;
+        const f = feats[0];
+        const flagId = (f.properties as { flagId?: string })?.flagId;
+        if (!flagId) return;
+        const coord = (f.geometry as GeoJSON.Point).coordinates as LngLatTuple;
+        openFlagPopup(flagId, coord, editable());
+        return;
+      }
+      if (!editable()) return;
       addFlagRef.current(e.lngLat.lng, e.lngLat.lat);
     };
-    m.on("click", onMapClick);
+    m.on("click", onClick);
 
-    // Car marker - hidden until online.
+    // --- Hover cursor over flags ---
+    const onEnter = () => { canvas().style.cursor = editable() ? "move" : isAdminRef.current ? "pointer" : ""; };
+    const onLeave = () => { canvas().style.cursor = editable() ? "crosshair" : ""; };
+    m.on("mouseenter", LAYER_ID, onEnter);
+    m.on("mouseleave", LAYER_ID, onLeave);
+
+    // --- Drag a flag to move it. Move/up are bound on `window`, not the
+    // canvas-only public map events, so releasing the mouse OUTSIDE the map
+    // still ends the drag (otherwise the flag stays stuck to the cursor). A 3px
+    // threshold (matching Mapbox's clickTolerance) keeps a jittery click from
+    // being treated as a move. ---
+    const DRAG_THRESHOLD = 3;
+    const clientToLngLat = (clientX: number, clientY: number): LngLatTuple => {
+      const rect = m.getCanvasContainer().getBoundingClientRect();
+      const ll = m.unproject([clientX - rect.left, clientY - rect.top]);
+      return [ll.lng, ll.lat];
+    };
+    const onWinUp = (ev: MouseEvent) => {
+      window.removeEventListener("mousemove", onWinMove);
+      window.removeEventListener("mouseup", onWinUp);
+      const id = draggingIdRef.current;
+      const moved = dragMovedRef.current;
+      const last = dragLngLatRef.current;
+      draggingIdRef.current = null;
+      dragLngLatRef.current = null;
+      dragMovedRef.current = false;
+      dragStartPointRef.current = null;
+      canvas().style.cursor = editable() ? "crosshair" : "";
+      if (id && moved && last) moveFlagRef.current(id, last[0], last[1]);
+      else refreshSource();
+    };
+    const onWinMove = (ev: MouseEvent) => {
+      if (!draggingIdRef.current) return;
+      if (ev.buttons === 0) { onWinUp(ev); return; } // released somewhere we missed
+      const start = dragStartPointRef.current;
+      if (!dragMovedRef.current) {
+        if (start && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < DRAG_THRESHOLD) return;
+        dragMovedRef.current = true;
+      }
+      dragLngLatRef.current = clientToLngLat(ev.clientX, ev.clientY);
+      refreshSource();
+    };
+    const onDragStart = (e: mapboxgl.MapLayerMouseEvent) => {
+      if (!editable() || !e.features?.length) return;
+      e.preventDefault(); // stop the map from panning
+      const flagId = (e.features[0].properties as { flagId?: string })?.flagId;
+      if (!flagId) return;
+      draggingIdRef.current = flagId;
+      dragMovedRef.current = false;
+      dragLngLatRef.current = null;
+      dragStartPointRef.current = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };
+      canvas().style.cursor = "grabbing";
+      window.addEventListener("mousemove", onWinMove);
+      window.addEventListener("mouseup", onWinUp);
+    };
+    m.on("mousedown", LAYER_ID, onDragStart);
+
+    // --- Touch drag (tablets). touchend reliably reaches the canvas (implicit
+    // target capture), so map events are fine here; same 3px threshold. ---
+    const onTouchMove = (e: mapboxgl.MapTouchEvent) => {
+      if (!draggingIdRef.current) return;
+      e.preventDefault();
+      const start = dragStartPointRef.current;
+      if (!dragMovedRef.current) {
+        if (start && Math.hypot(e.point.x - start.x, e.point.y - start.y) < DRAG_THRESHOLD) return;
+        dragMovedRef.current = true;
+      }
+      dragLngLatRef.current = [e.lngLat.lng, e.lngLat.lat];
+      refreshSource();
+    };
+    const onTouchEnd = () => {
+      m.off("touchmove", onTouchMove);
+      const id = draggingIdRef.current;
+      const moved = dragMovedRef.current;
+      const last = dragLngLatRef.current;
+      draggingIdRef.current = null;
+      dragLngLatRef.current = null;
+      dragMovedRef.current = false;
+      dragStartPointRef.current = null;
+      if (id && moved && last) moveFlagRef.current(id, last[0], last[1]);
+      else refreshSource();
+    };
+    const onTouchStart = (e: mapboxgl.MapLayerTouchEvent) => {
+      if (!editable() || !e.features?.length || e.points.length !== 1) return;
+      e.preventDefault();
+      const flagId = (e.features[0].properties as { flagId?: string })?.flagId;
+      if (!flagId) return;
+      draggingIdRef.current = flagId;
+      dragMovedRef.current = false;
+      dragLngLatRef.current = null;
+      dragStartPointRef.current = { x: e.point.x, y: e.point.y };
+      m.on("touchmove", onTouchMove);
+      m.once("touchend", onTouchEnd);
+    };
+    m.on("touchstart", LAYER_ID, onTouchStart);
+
+    // Car marker — plain HTML marker (inherits Mapbox's absolute positioning,
+    // so it tracks the map correctly). Hidden until the car is online.
     const carEl = document.createElement("div");
     carEl.className = "car-marker";
     carEl.style.cssText = `
-      width: 16px;
-      height: 16px;
-      background: hsl(142, 71%, 45%);
-      border-radius: 50%;
-      border: 2px solid white;
-      box-shadow: 0 0 12px hsl(142, 71%, 45%);
-      animation: pulse 2s infinite;
-      display: none;
+      width: 16px; height: 16px; background: hsl(142, 71%, 45%);
+      border-radius: 50%; border: 2px solid white;
+      box-shadow: 0 0 12px hsl(142, 71%, 45%); animation: pulse 2s infinite; display: none;
     `;
     carMarkerRef.current = new mapboxgl.Marker({ element: carEl })
       .setLngLat([track.bounds[0][0], track.bounds[0][1]])
@@ -265,9 +394,12 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
 
     return () => {
       resizeObserver.disconnect();
-      m.off("click", onMapClick);
-      markersRef.current.forEach(({ marker }) => marker.remove());
-      markersRef.current.clear();
+      window.removeEventListener("mousemove", onWinMove);
+      window.removeEventListener("mouseup", onWinUp);
+      readyRef.current = false;
+      refreshSourceRef.current = () => {};
+      colorPopupRef.current?.remove();
+      colorPopupRef.current = null;
       carMarkerRef.current?.remove();
       carMarkerRef.current = null;
       m.remove();
@@ -276,95 +408,36 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update car marker position when GPS data changes.
+  // Push flag changes into the GL source, and keep an open popup locked to its
+  // flag if that flag is moved or deleted concurrently by another client.
+  useEffect(() => {
+    flagsRef.current = flags;
+    if (readyRef.current) refreshSourceRef.current();
+
+    const popup = colorPopupRef.current;
+    const id = popupFlagIdRef.current;
+    if (popup && id) {
+      const f = flags[id];
+      if (!f) {
+        popup.remove();
+      } else {
+        const cur = popup.getLngLat();
+        if (cur.lng !== f.lng || cur.lat !== f.lat) popup.setLngLat([f.lng, f.lat]);
+      }
+    }
+  }, [flags]);
+
+  // Car marker position.
   useEffect(() => {
     if (!carMarkerRef.current || !map.current) return;
     const el = carMarkerRef.current.getElement();
     if (!el) return;
-
-    if (!isCarOnline) {
-      el.style.display = "none";
-      return;
-    }
+    if (!isCarOnline) { el.style.display = "none"; return; }
     el.style.display = "block";
     if (position.lat !== 0 && position.lng !== 0) {
       carMarkerRef.current.setLngLat([position.lng, position.lat]);
     }
   }, [position, isCarOnline]);
-
-  // Reconcile flag markers with the live flag set + edit mode.
-  useEffect(() => {
-    if (!map.current) return;
-    const m = map.current;
-    const editable = isAdmin && editMode;
-    const seen = new Set<string>();
-
-    Object.values(flags).forEach((flag: FlagData) => {
-      seen.add(flag.flagId);
-      let refs = markersRef.current.get(flag.flagId);
-
-      if (!refs) {
-        const { el, icon, del } = createFlagElement(flag.color);
-        const marker = new mapboxgl.Marker({ element: el, draggable: false, anchor: "bottom" })
-          .setLngLat([flag.lng, flag.lat])
-          .addTo(m);
-
-        // Click → colour popup (admin, non-edit mode only).
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          if (!isAdminRef.current || editModeRef.current) return;
-          const ll = marker.getLngLat();
-          openColorPopup(flag.flagId, [ll.lng, ll.lat]);
-        });
-
-        // Drag → persist new position.
-        marker.on("dragstart", () => {
-          draggingIdRef.current = flag.flagId;
-        });
-        marker.on("dragend", () => {
-          draggingIdRef.current = null;
-          const ll = marker.getLngLat();
-          moveFlagRef.current(flag.flagId, ll.lng, ll.lat);
-        });
-
-        // Delete badge.
-        del.addEventListener("click", (e) => {
-          e.stopPropagation();
-          deleteFlagRef.current(flag.flagId);
-        });
-
-        refs = { marker, icon, del };
-        markersRef.current.set(flag.flagId, refs);
-      } else {
-        // Don't fight an in-progress drag; otherwise keep position in sync.
-        const cur = refs.marker.getLngLat();
-        if (
-          draggingIdRef.current !== flag.flagId &&
-          (cur.lng !== flag.lng || cur.lat !== flag.lat)
-        ) {
-          refs.marker.setLngLat([flag.lng, flag.lat]);
-        }
-      }
-
-      refs.icon.innerHTML = flagSvg(getFlagColorHex(flag.color));
-      refs.marker.setDraggable(editable);
-      refs.del.style.display = editable ? "flex" : "none";
-      refs.marker.getElement().style.cursor = editable
-        ? "move"
-        : isAdmin
-          ? "pointer"
-          : "default";
-    });
-
-    // Remove markers whose flag is gone.
-    markersRef.current.forEach((refs, id) => {
-      if (!seen.has(id)) {
-        refs.marker.remove();
-        markersRef.current.delete(id);
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flags, editMode, isAdmin]);
 
   // Crosshair cursor + no double-click-zoom while placing flags.
   useEffect(() => {
@@ -384,9 +457,7 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
     }
   }, [selectedTrack, track.bounds]);
 
-  const handleTrackChange = (trackName: TrackName) => {
-    setSelectedTrack(trackName);
-  };
+  const handleTrackChange = (trackName: TrackName) => setSelectedTrack(trackName);
 
   return (
     <div className={cn("glass-card relative rounded-2xl p-4 flex flex-col", className)}>
@@ -405,10 +476,7 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
                 <DropdownMenuItem
                   key={trackKey}
                   onClick={() => handleTrackChange(trackKey)}
-                  className={cn(
-                    "cursor-pointer",
-                    selectedTrack === trackKey && "bg-muted"
-                  )}
+                  className={cn("cursor-pointer", selectedTrack === trackKey && "bg-muted")}
                 >
                   {tracks[trackKey].name}
                 </DropdownMenuItem>
@@ -441,7 +509,6 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
         )}
       </div>
       <div className="relative flex-1 w-full min-h-0 rounded-lg overflow-hidden">
-        {/* Custom popup styles */}
         <style>{`
           .flag-popup-custom .mapboxgl-popup-content {
             background: hsl(222.2 47.4% 11.2%);
@@ -455,27 +522,18 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
             border-bottom-color: hsl(222.2 47.4% 11.2%);
           }
         `}</style>
-        {/* Mapbox Map */}
         <div ref={mapContainer} className="absolute inset-0 [&_.mapboxgl-ctrl-logo]:hidden" />
-        {/* Edit-mode hint */}
         {isAdmin && editMode && (
           <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full bg-background/80 backdrop-blur-md border border-border/40 shadow-lg text-[11px] text-foreground whitespace-nowrap pointer-events-none">
-            Click map to add · drag to move · × to delete
+            Click map to add · drag flag to move · click flag to recolour / delete
           </div>
         )}
       </div>
-      {/* Flag legend with frosted glass effect */}
       <div className="mt-3 p-3 rounded-xl bg-background/30 backdrop-blur-md border border-border/30 shadow-lg">
         <div className="flex items-center gap-3 justify-center">
           {(["yellow", "red"] as FlagColor[]).map((color) => (
             <div key={color} className="flex items-center gap-1.5">
-              <Flag
-                className="w-4 h-4"
-                style={{
-                  fill: flagColors[color],
-                  color: flagColors[color]
-                }}
-              />
+              <Flag className="w-4 h-4" style={{ fill: flagColors[color], color: flagColors[color] }} />
               <span className="text-xs text-muted-foreground">{flagLabels[color]}</span>
             </div>
           ))}
