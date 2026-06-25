@@ -29,8 +29,8 @@ class SpeedEstimator(
     private val qB: Double = 1e-4,             // bias random-walk noise
     private val deadbandK: Double = 2.0,       // standstill when v < k·speedAccuracy
     private val deadbandFallbackAcc: Double = 0.5, // used when speedAccuracy unknown
-    private val aLow: Double = 0.15,           // display smoothing when slow (heavy)
-    private val aHigh: Double = 0.7,           // display smoothing when fast (light)
+    private val aLow: Double = 0.35,           // display smoothing when slow (the KF already denoises)
+    private val aHigh: Double = 0.85,          // display smoothing when fast (very light → no lag)
     private val refSpeedMps: Double = 8.0,     // ~29 km/h: where smoothing reaches aHigh
 ) {
     // State
@@ -117,4 +117,27 @@ class SpeedEstimator(
     }
 
     fun bias(): Double = b
+
+    companion object {
+        /**
+         * Whether a zero-velocity update should fire, given standstill evidence.
+         *
+         * A fresh GNSS Doppler fix is authoritative — ZUPT only when GNSS itself
+         * agrees the car is at rest, so a genuinely-moving slow crawl is never
+         * zeroed. The Kalman-speed fallback is used ONLY during a GNSS dropout
+         * (stale fix) and only with a gyro to veto slow turns. Never ZUPT before
+         * the first real speed fix (cold-start-while-moving must not be pinned).
+         */
+        fun shouldZupt(
+            imuStationary: Boolean,
+            hadGnssSpeed: Boolean,
+            gnssFresh: Boolean,
+            gnssNearZero: Boolean,
+            hasGyro: Boolean,
+            kfSpeedNearZero: Boolean,
+        ): Boolean {
+            if (!imuStationary || !hadGnssSpeed) return false
+            return if (gnssFresh) gnssNearZero else (hasGyro && kfSpeedNearZero)
+        }
+    }
 }

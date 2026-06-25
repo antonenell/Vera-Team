@@ -15,6 +15,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -26,7 +27,6 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
-import com.google.android.gms.location.*
 import com.verateam.driverdisplay.MainActivity
 import com.verateam.driverdisplay.R
 import com.verateam.driverdisplay.data.Repository
@@ -42,22 +42,25 @@ import kotlin.math.sqrt
  * High-accuracy, low-latency speed/location service.
  *
  * Speed pipeline (see SpeedEstimator):
- *  - GNSS Doppler speed (Location.getSpeed(), gated by hasSpeed() + speedAccuracy)
- *    is the accurate ABSOLUTE source — even at walking pace.
+ *  - Raw GNSS Doppler speed from LocationManager.GPS_PROVIDER (Location.getSpeed(),
+ *    gated by hasSpeed() + speedAccuracy) is the accurate ABSOLUTE source — even
+ *    at walking pace. Raw GPS_PROVIDER is used instead of the fused provider so
+ *    every value is the chip's true per-fix Doppler velocity, not a fused
+ *    "smoothed and processed" estimate (which adds latency).
  *  - The IMU (linear-accel projected on travel direction) only predicts BETWEEN
  *    the ~1 Hz fixes, at ~50 Hz, for responsiveness. A Kalman bias-state + ZUPT
  *    stop the low-speed drift that broke the earlier fusion.
- *  - An uncertainty-scaled dead-band (v < k·speedAccuracy ⇒ 0) replaces the old
- *    hard <0.3 m/s cut, and a speed-adaptive dt-aware EMA replaces the laggy EMA.
- *  - minUpdateDistance is 0 (a non-zero value froze the readout when crawling).
+ *  - ZUPT fires as soon as the IMU is quiet AND either GNSS or the Kalman speed
+ *    is near zero — so a stop snaps to 0 within ~0.35 s, not a full GNSS cycle.
+ *  - An uncertainty-scaled dead-band + a light, speed-adaptive display EMA give a
+ *    stable 0 at rest and a fast-tracking readout.
  *
  * Output goes straight to [LiveLocation] (on-device, instant) for the driver's
  * own display, and is throttled to Supabase for the remote web dashboard.
  */
 class LocationService : Service(), SensorEventListener {
 
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private lateinit var locationCallback: LocationCallback
+    private lateinit var locationManager: LocationManager
     private lateinit var sensorManager: SensorManager
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -66,6 +69,17 @@ class LocationService : Service(), SensorEventListener {
 
     private val kalmanFilter = KalmanLatLong()
     private val estimator = SpeedEstimator()
+
+    private val locationListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) = processLocation(location)
+        override fun onProviderEnabled(provider: String) {
+            // GPS re-enabled / recovered — re-arm cleanly.
+            restartLocationUpdates()
+        }
+        override fun onProviderDisabled(provider: String) {
+            Log.w(TAG, "GPS provider disabled")
+        }
+    }
 
     // Sensors for IMU prediction + standstill detection.
     private var linearAccel: Sensor? = null
@@ -90,13 +104,13 @@ class LocationService : Service(), SensorEventListener {
     @Volatile private var lastAccuracyM = 0f
     @Volatile private var lastGnssSpeedMps = 0.0
     @Volatile private var lastGnssSAcc = DEFAULT_SACC
+    @Volatile private var lastGnssSpeedNanos = 0L
     @Volatile private var hasFix = false
     @Volatile private var currentDisplayKmh = 0.0
     private var lastGnssNanos = 0L
     private var lastTelemetryNanos = 0L
 
     // GPS health monitoring
-    private var consecutiveGpsFailures = 0
     private var lastValidLocationTime = 0L
 
     companion object {
@@ -104,8 +118,6 @@ class LocationService : Service(), SensorEventListener {
         private const val CHANNEL_ID = "location_service_channel"
         private const val NOTIFICATION_ID = 1
 
-        private const val UPDATE_INTERVAL_MS = 1000L          // 1 Hz GNSS target (chip ceiling)
-        private const val FASTEST_UPDATE_INTERVAL_MS = 0L     // pass every fix
         private const val MAX_ACCEPTABLE_ACCURACY = 50f       // horizontal radius (m)
         private const val GPS_TIMEOUT_MS = 5000L
 
@@ -114,11 +126,13 @@ class LocationService : Service(), SensorEventListener {
         private const val DEADBAND_K = 2.0                    // standstill: v < k·speedAccuracy
         private const val BEARING_MIN_SPEED = 2.0             // m/s — below this bearing is unreliable
         private const val STALE_FIX_NS = 3_000_000_000L       // reject fixes older than 3 s
+        private const val ZUPT_KF_SPEED_MPS = 0.6             // KF-speed gate (only used during a GNSS dropout)
+        private const val GNSS_SPEED_FRESH_NS = 2_500_000_000L // trust GNSS speed for ZUPT if < 2.5 s old
 
-        // Standstill detection
+        // Standstill detection (faster than a full GNSS cycle)
         private const val ACCEL_QUIET = 0.35                  // m/s² (linear accel magnitude)
         private const val GYRO_QUIET = 0.08                   // rad/s
-        private const val QUIET_DURATION_NS = 700_000_000L    // 0.7 s quiet ⇒ stationary
+        private const val QUIET_DURATION_NS = 350_000_000L    // 0.35 s quiet ⇒ stationary
 
         private const val TELEMETRY_INTERVAL_NS = 200_000_000L // throttle Supabase to ~5 Hz
     }
@@ -126,8 +140,7 @@ class LocationService : Service(), SensorEventListener {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        setupLocationCallback()
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         setupSensorManager()
         acquireWakeLock()
     }
@@ -178,24 +191,7 @@ class LocationService : Service(), SensorEventListener {
             .build()
     }
 
-    // ========== LOCATION (GNSS) ==========
-
-    private fun setupLocationCallback() {
-        locationCallback = object : LocationCallback() {
-            override fun onLocationResult(result: LocationResult) {
-                result.lastLocation?.let { processLocation(it) }
-            }
-
-            override fun onLocationAvailability(availability: LocationAvailability) {
-                if (!availability.isLocationAvailable) {
-                    consecutiveGpsFailures++
-                    if (consecutiveGpsFailures > 3) restartLocationUpdates()
-                } else {
-                    consecutiveGpsFailures = 0
-                }
-            }
-        }
-    }
+    // ========== LOCATION (raw GNSS) ==========
 
     private fun processLocation(location: Location) {
         // Reject stale or low-accuracy fixes before they reach the filter.
@@ -204,7 +200,6 @@ class LocationService : Service(), SensorEventListener {
         if (location.accuracy > MAX_ACCEPTABLE_ACCURACY || location.accuracy <= 0) return
 
         lastValidLocationTime = System.currentTimeMillis()
-        consecutiveGpsFailures = 0
 
         // Position: Kalman-smoothed lat/lng.
         val filtered = kalmanFilter.filter(location) ?: location
@@ -220,7 +215,10 @@ class LocationService : Service(), SensorEventListener {
                 location.speedAccuracyMetersPerSecond.toDouble() else DEFAULT_SACC
             lastGnssSpeedMps = location.speed.toDouble()
             lastGnssSAcc = sAcc
+            lastGnssSpeedNanos = SystemClock.elapsedRealtimeNanos()
             estimator.correctGnss(location.speed.toDouble(), sAcc)
+            // A clearly-moving fix breaks any accumulated "quiet" so ZUPT can't latch.
+            if (lastGnssSpeedMps >= DEADBAND_K * lastGnssSAcc) quietSinceNanos = 0L
         }
 
         // Heading only when fast enough to be reliable; freeze it otherwise.
@@ -248,41 +246,52 @@ class LocationService : Service(), SensorEventListener {
             Log.e(TAG, "Location permission not granted")
             return
         }
+        if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            Log.w(TAG, "GPS provider disabled — speed will be unavailable until enabled")
+        }
         try {
-            fusedLocationClient.requestLocationUpdates(
-                createLocationRequest(), locationCallback, Looper.getMainLooper()
+            // minTime=0, minDistance=0: deliver every GNSS fix (a non-zero distance
+            // filter freezes the readout when crawling). The chip caps at ~1 Hz.
+            locationManager.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER, 0L, 0f, locationListener, Looper.getMainLooper()
             )
+            // Seed the watchdog clock so a first fix that never arrives still times
+            // out and triggers a restart (cold start in a covered garage, etc.).
+            if (lastValidLocationTime == 0L) lastValidLocationTime = System.currentTimeMillis()
+            // Quick first value from the last known GNSS fix.
+            locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let {
+                if (it.accuracy in 0.01f..MAX_ACCEPTABLE_ACCURACY) processLocation(it)
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Location permission revoked: ${e.message}")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start location updates: ${e.message}")
         }
-        fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
-            loc?.let { if (it.accuracy in 0.01f..MAX_ACCEPTABLE_ACCURACY) processLocation(it) }
-        }
     }
-
-    private fun createLocationRequest(): LocationRequest =
-        LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, UPDATE_INTERVAL_MS)
-            .setMinUpdateIntervalMillis(FASTEST_UPDATE_INTERVAL_MS) // pass every fix
-            .setMinUpdateDistanceMeters(0f)                          // CRITICAL: never throttle by distance
-            .setWaitForAccurateLocation(false)
-            .setGranularity(Granularity.GRANULARITY_FINE)
-            .setMaxUpdateDelayMillis(0L)                             // no batching
-            .build()
 
     private fun stopLocationUpdates() {
         try {
-            fusedLocationClient.removeLocationUpdates(locationCallback)
+            locationManager.removeUpdates(locationListener)
         } catch (e: Exception) {
             Log.e(TAG, "Error stopping location updates: ${e.message}")
         }
     }
 
     private fun restartLocationUpdates() {
-        stopLocationUpdates()
-        kalmanFilter.reset()
-        estimator.reset()
-        haveBearing = false
+        stopLocationUpdates() // removeUpdates() is thread-safe
         serviceScope.launch {
+            // The estimator/Kalman/bearing state is owned by the main thread (the
+            // sensor + location callbacks run there). Reset it on the main thread
+            // so it never races the ~50 Hz sensor loop.
+            withContext(Dispatchers.Main) {
+                kalmanFilter.reset()
+                estimator.reset()
+                haveBearing = false
+                travelBearingRad = 0.0
+                lastGnssSpeedMps = 0.0
+                lastGnssSAcc = DEFAULT_SACC
+                lastGnssSpeedNanos = 0L
+            }
             delay(500)
             withContext(Dispatchers.Main) { startLocationUpdates() }
         }
@@ -341,7 +350,9 @@ class LocationService : Service(), SensorEventListener {
 
         estimator.predict(aLon, dt)
 
-        // Standstill detection: IMU quiet for a sustained window AND GNSS near zero.
+        // Standstill: IMU quiet for a short window AND (GNSS near zero OR the
+        // Kalman speed is already near zero — which the IMU brings down within
+        // ~20 ms of braking, so we don't wait a full GNSS cycle).
         val quiet = accelMag < ACCEL_QUIET && gyroMagnitude < GYRO_QUIET
         val now = event.timestamp
         if (quiet) {
@@ -350,8 +361,16 @@ class LocationService : Service(), SensorEventListener {
             quietSinceNanos = 0L
         }
         val imuStationary = quietSinceNanos != 0L && (now - quietSinceNanos) > QUIET_DURATION_NS
-        val gnssNearZero = lastGnssSpeedMps < DEADBAND_K * lastGnssSAcc
-        if (imuStationary && gnssNearZero) {
+        val gnssAgeNs = SystemClock.elapsedRealtimeNanos() - lastGnssSpeedNanos
+        if (SpeedEstimator.shouldZupt(
+                imuStationary = imuStationary,
+                hadGnssSpeed = lastGnssSpeedNanos != 0L,
+                gnssFresh = lastGnssSpeedNanos != 0L && gnssAgeNs < GNSS_SPEED_FRESH_NS,
+                gnssNearZero = lastGnssSpeedMps < DEADBAND_K * lastGnssSAcc,
+                hasGyro = gyroscope != null,
+                kfSpeedNearZero = estimator.speedMps() < ZUPT_KF_SPEED_MPS,
+            )
+        ) {
             estimator.applyZupt()
         }
 
@@ -401,7 +420,9 @@ class LocationService : Service(), SensorEventListener {
             while (isActive) {
                 delay(GPS_TIMEOUT_MS)
                 val since = System.currentTimeMillis() - lastValidLocationTime
-                if (lastValidLocationTime > 0 && since > GPS_TIMEOUT_MS * 2) restartLocationUpdates()
+                if (lastValidLocationTime > 0 && since > GPS_TIMEOUT_MS * 2) {
+                    restartLocationUpdates()
+                }
             }
         }
     }

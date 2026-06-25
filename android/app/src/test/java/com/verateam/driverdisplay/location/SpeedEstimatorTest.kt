@@ -76,4 +76,72 @@ class SpeedEstimatorTest {
         assertTrue("phantom should be ~0, was ${phantom.speedMps()}", phantom.speedMps() < 0.15)
         assertTrue("real crawl kept, was ${real.speedMps()}", abs(real.speedMps() - 1.2) < 0.3)
     }
+
+    /** Display must track a step change quickly (light smoothing on top of the KF). */
+    @Test
+    fun displayTracksStepQuickly() {
+        val e = SpeedEstimator()
+        repeat(5) { e.correctGnss(10.0, 0.2) } // KF speed ≈ 10 m/s
+        var disp = 0.0
+        repeat(10) { disp = e.displaySpeedKmh(0.02) } // 0.2 s @ 50 Hz
+        // target ≈ 36 km/h; must reach >34 within 0.2 s
+        assertTrue("display should reach the new speed fast, was $disp", disp > 34.0)
+    }
+
+    /** When stopped, the displayed number must fall to ~0 quickly. */
+    @Test
+    fun displayDropsToZeroQuickly() {
+        val e = SpeedEstimator()
+        repeat(5) { e.correctGnss(10.0, 0.2) }
+        repeat(10) { e.displaySpeedKmh(0.02) } // ramp display up
+        e.applyZupt()                          // stop detected → v = 0
+        var disp = 99.0
+        repeat(15) { disp = e.displaySpeedKmh(0.02) } // 0.3 s
+        assertTrue("display should drop to ~0 within 0.3 s, was $disp", disp < 1.0)
+    }
+
+    // ---- ZUPT gate (the bug the review caught: must not zero a moving car) ----
+
+    private fun zupt(
+        imuStationary: Boolean = true,
+        hadGnssSpeed: Boolean = true,
+        gnssFresh: Boolean = true,
+        gnssNearZero: Boolean = true,
+        hasGyro: Boolean = true,
+        kfSpeedNearZero: Boolean = true,
+    ) = SpeedEstimator.shouldZupt(imuStationary, hadGnssSpeed, gnssFresh, gnssNearZero, hasGyro, kfSpeedNearZero)
+
+    @Test
+    fun zuptFiresOnRealStop() {
+        // Stationary + a fresh GNSS fix that says ~0 ⇒ ZUPT.
+        assertTrue(zupt(gnssFresh = true, gnssNearZero = true))
+    }
+
+    @Test
+    fun zuptDoesNotZeroAMovingCar() {
+        // Fresh GNSS says MOVING (gnssNearZero = false) ⇒ never ZUPT, even if the
+        // IMU is quiet and the KF speed is low. (The core regression.)
+        assertTrue(!zupt(gnssFresh = true, gnssNearZero = false, kfSpeedNearZero = true))
+    }
+
+    @Test
+    fun zuptNotBeforeFirstFix() {
+        // Cold start while cruising: no speed fix yet ⇒ never pin to 0.
+        assertTrue(!zupt(hadGnssSpeed = false))
+    }
+
+    @Test
+    fun zuptFallsBackToKfOnlyDuringDropout() {
+        // GNSS stale (dropout) + gyro present + KF near zero ⇒ allowed.
+        assertTrue(zupt(gnssFresh = false, hasGyro = true, kfSpeedNearZero = true))
+        // …but not while the KF still thinks it's moving.
+        assertTrue(!zupt(gnssFresh = false, hasGyro = true, kfSpeedNearZero = false))
+        // …and not on a gyroless device (can't veto a slow turn).
+        assertTrue(!zupt(gnssFresh = false, hasGyro = false, kfSpeedNearZero = true))
+    }
+
+    @Test
+    fun zuptRequiresStationary() {
+        assertTrue(!zupt(imuStationary = false))
+    }
 }
