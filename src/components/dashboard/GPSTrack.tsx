@@ -52,8 +52,14 @@ const flagSvg = (hex: string): string =>
 const createFlagElement = (color: FlagColor) => {
   const el = document.createElement("div");
   el.className = "flag-marker";
+  // Must stay position:absolute (top/left 0) like Mapbox's own marker class —
+  // an inline position:relative here puts the flag at its document-flow spot
+  // before the transform, which scatters markers and detaches their popups.
+  // The absolute box is still a positioning context for the delete badge.
   el.style.cssText = `
-    position: relative;
+    position: absolute;
+    top: 0;
+    left: 0;
     display: flex;
     align-items: center;
     justify-content: center;
