@@ -81,6 +81,7 @@ const FLAG_POPUP_OFFSET: Record<string, [number, number]> = {
 };
 
 const FLAG_OPTIONS: { color: FlagColor; label: string }[] = [
+  { color: "grey", label: "Neutral" },
   { color: "yellow", label: "Caution" },
   { color: "red", label: "Danger" },
 ];
@@ -501,7 +502,7 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
               size="icon"
               className="h-6 w-6"
               onClick={resetFlags}
-              title="Set all flags to yellow"
+              title="Set all flags to neutral"
             >
               <RotateCcw className="w-3 h-3" />
             </Button>
@@ -531,7 +532,7 @@ const GPSTrack = ({ position, className, isAdmin = false, isCarOnline = false }:
       </div>
       <div className="mt-3 p-3 rounded-xl bg-background/30 backdrop-blur-md border border-border/30 shadow-lg">
         <div className="flex items-center gap-3 justify-center">
-          {(["yellow", "red"] as FlagColor[]).map((color) => (
+          {(["grey", "yellow", "red"] as FlagColor[]).map((color) => (
             <div key={color} className="flex items-center gap-1.5">
               <Flag className="w-4 h-4" style={{ fill: flagColors[color], color: flagColors[color] }} />
               <span className="text-xs text-muted-foreground">{flagLabels[color]}</span>

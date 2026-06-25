@@ -197,17 +197,17 @@ export const useTrackFlags = (isAdmin: boolean, selectedTrack: TrackName) => {
           ? crypto.randomUUID()
           : `flag-${Date.now()}-${Math.round(lng * 1e5)}`;
 
-      // Optimistic insert. New flags start as yellow (caution).
+      // Optimistic insert. New flags start as grey (neutral).
       markDirty(flagId);
       setFlags((prev) => ({
         ...prev,
-        [flagId]: { flagId, lng, lat, color: "yellow" },
+        [flagId]: { flagId, lng, lat, color: "grey" },
       }));
 
       const { error } = await supabase.from("track_flags").insert({
         track_id: selectedTrack,
         flag_id: flagId,
-        color: "yellow",
+        color: "grey",
         lng,
         lat,
       });
@@ -284,10 +284,57 @@ export const useTrackFlags = (isAdmin: boolean, selectedTrack: TrackName) => {
     [isAdmin, selectedTrack, markDirty]
   );
 
+  // Set every flag on the track to one colour (optimistic, with rollback).
+  const setAllColors = useCallback(
+    async (color: FlagColor) => {
+      let snapshot: Record<string, FlagData> = {};
+      setFlags((prev) => {
+        snapshot = prev;
+        const next: Record<string, FlagData> = {};
+        Object.values(prev).forEach((f) => {
+          markDirty(f.flagId);
+          next[f.flagId] = { ...f, color };
+        });
+        return next;
+      });
+
+      const { error } = await supabase
+        .from("track_flags")
+        .update({ color, updated_at: new Date().toISOString() })
+        .eq("track_id", selectedTrack);
+
+      if (error) {
+        console.error("setAllColors failed:", error);
+        setFlags((cur) => {
+          const next: Record<string, FlagData> = {};
+          Object.values(cur).forEach((f) => {
+            next[f.flagId] = { ...f, color: snapshot[f.flagId]?.color ?? f.color };
+          });
+          return next;
+        });
+      }
+    },
+    [selectedTrack, markDirty]
+  );
+
   const updateFlagColor = useCallback(
     async (flagId: string, color: FlagColor) => {
       if (!isAdmin) return;
 
+      const current = flags[flagId]?.color;
+
+      // Red is a full-course condition: setting any flag red turns them all red.
+      if (color === "red") {
+        await setAllColors("red");
+        return;
+      }
+      // Clearing a red flag (to any other colour) resets every flag to neutral.
+      if (current === "red") {
+        await setAllColors("grey");
+        return;
+      }
+
+      // Otherwise it's an individual grey <-> yellow change.
       markDirty(flagId);
       let prevColor: FlagColor | undefined;
       setFlags((cur) => {
@@ -309,40 +356,14 @@ export const useTrackFlags = (isAdmin: boolean, selectedTrack: TrackName) => {
         );
       }
     },
-    [isAdmin, selectedTrack, markDirty]
+    [isAdmin, selectedTrack, markDirty, flags, setAllColors]
   );
 
+  // The reset button just clears everyone to neutral.
   const resetFlags = useCallback(async () => {
     if (!isAdmin) return;
-
-    let snapshot: Record<string, FlagData> = {};
-    setFlags((prev) => {
-      snapshot = prev;
-      const next: Record<string, FlagData> = {};
-      Object.values(prev).forEach((f) => {
-        markDirty(f.flagId);
-        next[f.flagId] = { ...f, color: "yellow" };
-      });
-      return next;
-    });
-
-    const { error } = await supabase
-      .from("track_flags")
-      .update({ color: "yellow", updated_at: new Date().toISOString() })
-      .eq("track_id", selectedTrack);
-
-    if (error) {
-      console.error("resetFlags failed:", error);
-      // Restore each still-present flag's prior colour.
-      setFlags((cur) => {
-        const next: Record<string, FlagData> = {};
-        Object.values(cur).forEach((f) => {
-          next[f.flagId] = { ...f, color: snapshot[f.flagId]?.color ?? f.color };
-        });
-        return next;
-      });
-    }
-  }, [isAdmin, selectedTrack, markDirty]);
+    await setAllColors("grey");
+  }, [isAdmin, setAllColors]);
 
   const getFlagColor = useCallback(
     (flagId: string): FlagColor => flags[flagId]?.color ?? "grey",
