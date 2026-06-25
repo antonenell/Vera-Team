@@ -436,7 +436,12 @@ class LocationService : Service(), SensorEventListener {
         if (now - lastTempSentNanos >= TEMP_INTERVAL_NS) {
             lastTempSentNanos = now
             val tempC = getBatteryTemp()
-            if (!tempC.isNaN()) serviceScope.launch { repository.updatePhoneTemp(tempC) }
+            if (!tempC.isNaN()) {
+                Log.i("SensorCheck", "Battery temp = $tempC °C (sending to Supabase)")
+                serviceScope.launch { repository.updatePhoneTemp(tempC) }
+            } else {
+                Log.w("SensorCheck", "Battery temperature not available via EXTRA_TEMPERATURE on this device")
+            }
         }
     }
 
