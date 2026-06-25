@@ -46,8 +46,8 @@ data class TrackConfig(
 )
 
 val tracks = mapOf(
-    "silesia-ring" to TrackConfig("Silesia Ring", center = Pair(18.0944, 50.5291), zoom = 15.5),
-    "stora-holm" to TrackConfig("Stora Holm", center = Pair(11.9177, 57.7762), zoom = 16.0),
+    "silesia-ring" to TrackConfig("Silesia Ring", center = Pair(18.0944, 50.5291), zoom = 14.3),
+    "stora-holm" to TrackConfig("Stora Holm", center = Pair(11.9177, 57.7762), zoom = 14.8),
 )
 
 private fun createCircleBitmap(color: Int, size: Int, strokeColor: Int = android.graphics.Color.WHITE, strokeWidth: Float = 4f): Bitmap {
