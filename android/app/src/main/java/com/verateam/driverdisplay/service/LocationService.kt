@@ -10,10 +10,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.location.GnssMeasurementRequest
+import android.location.GnssMeasurementsEvent
 import android.location.Location
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
+import android.os.Build
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
@@ -70,6 +74,11 @@ class LocationService : Service() {
     private var displayKmh = 0.0
     private var haveFirstSpeed = false
     private var lastSpeedFixMs = 0L
+    private var lastFixNanos = 0L
+
+    // GNSS measurements callback, registered only to disable duty cycling (full tracking).
+    private var locationManager: LocationManager? = null
+    private var gnssCallback: GnssMeasurementsEvent.Callback? = null
 
     // One position/speed snapshot per fix; CONFLATED so a slow network drops stale
     // intermediate fixes and a single collector writes them strictly in order.
@@ -109,6 +118,7 @@ class LocationService : Service() {
         if (started.compareAndSet(false, true)) {
             startTelemetrySender()
             startLocationUpdates()
+            disableGnssDutyCycling()
             serviceScope.launch { repository.setOnlineStatus(true) }
             startPhoneTempReporter()
         }
@@ -118,6 +128,8 @@ class LocationService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         stopLocationUpdates()
+        gnssCallback?.let { runCatching { locationManager?.unregisterGnssMeasurementsCallback(it) } }
+        gnssCallback = null
         releaseWakeLock()
         LiveLocation.update(LiveLocation.Data()) // clear the on-device readout
         // Best-effort offline flip, bounded so a slow/down network can't ANR teardown.
@@ -168,8 +180,20 @@ class LocationService : Service() {
             lastSpeedFixMs != 0L && now - lastSpeedFixMs > NO_SPEED_DECAY_MS -> 0.0
             else -> displayKmh
         }
-        displayKmh = SpeedSmoothing.smooth(displayKmh, rawKmh, haveFirstSpeed)
+        // The chip's own 1σ speed accuracy drives the standstill gate + smoothing.
+        val sigmaKmh = if (location.hasSpeedAccuracy()) location.speedAccuracyMetersPerSecond * 3.6 else Double.NaN
+        displayKmh = SpeedSmoothing.smooth(displayKmh, rawKmh, sigmaKmh, haveFirstSpeed)
         haveFirstSpeed = true
+
+        // Diagnostic: log the REAL fix cadence (consumer GNSS chips often cap at ~1 Hz
+        // regardless of the 5 Hz request). Filter logcat by tag "SpeedRate".
+        val fixNs = location.elapsedRealtimeNanos
+        if (lastFixNanos != 0L) {
+            val dtMs = (fixNs - lastFixNanos) / 1_000_000
+            val sigStr = if (sigmaKmh.isNaN()) "n/a" else String.format("%.1f", sigmaKmh)
+            Log.d("SpeedRate", "dt=${dtMs}ms raw=${String.format("%.1f", rawKmh)} disp=${String.format("%.1f", displayKmh)} sigma=$sigStr")
+        }
+        lastFixNanos = fixNs
 
         // On-device display (instant) — the driver's speedometer reads from here.
         LiveLocation.update(
@@ -229,6 +253,30 @@ class LocationService : Service() {
             fusedLocationClient.removeLocationUpdates(locationCallback)
         } catch (e: Exception) {
             Log.e(TAG, "Error stopping location updates: ${e.message}")
+        }
+    }
+
+    /**
+     * Disable GNSS duty cycling (Android 12+) so the chipset tracks continuously
+     * instead of powering the receiver down between fixes — fresher, gap-free fixes
+     * (better low-speed responsiveness). We register a no-op measurements callback
+     * purely for its full-tracking request; speed still comes from Location.getSpeed().
+     */
+    private fun disableGnssDutyCycling() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) return
+        val lm = (locationManager ?: (getSystemService(Context.LOCATION_SERVICE) as LocationManager))
+            .also { locationManager = it }
+        val cb = object : GnssMeasurementsEvent.Callback() {}
+        try {
+            val request = GnssMeasurementRequest.Builder().setFullTracking(true).build()
+            lm.registerGnssMeasurementsCallback(request, mainExecutor, cb)
+            gnssCallback = cb
+            Log.i(TAG, "GNSS full tracking enabled (duty cycling off)")
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not enable GNSS full tracking: ${e.message}")
         }
     }
 
