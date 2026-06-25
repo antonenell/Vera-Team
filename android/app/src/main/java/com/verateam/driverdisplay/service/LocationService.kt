@@ -109,7 +109,6 @@ class LocationService : Service(), SensorEventListener {
     @Volatile private var currentDisplayKmh = 0.0
     private var lastGnssNanos = 0L
     private var lastTelemetryNanos = 0L
-    private var lastTempSentNanos = 0L
 
     // GPS health monitoring
     private var lastValidLocationTime = 0L
@@ -136,7 +135,6 @@ class LocationService : Service(), SensorEventListener {
         private const val QUIET_DURATION_NS = 350_000_000L    // 0.35 s quiet ⇒ stationary
 
         private const val TELEMETRY_INTERVAL_NS = 200_000_000L // throttle Supabase to ~5 Hz
-        private const val TEMP_INTERVAL_NS = 5_000_000_000L    // phone temp changes slowly: ~0.2 Hz
     }
 
     override fun onCreate() {
@@ -153,6 +151,7 @@ class LocationService : Service(), SensorEventListener {
         startSensorUpdates()
         serviceScope.launch { repository.setOnlineStatus(true) }
         startGpsHealthMonitor()
+        startPhoneTempReporter()
         return START_STICKY
     }
 
@@ -416,8 +415,6 @@ class LocationService : Service(), SensorEventListener {
     private fun maybeSendTelemetry() {
         if (!hasFix) return
         val now = SystemClock.elapsedRealtimeNanos()
-
-        // Main telemetry (position / speed / battery %) at ~5 Hz.
         if (now - lastTelemetryNanos >= TELEMETRY_INTERVAL_NS) {
             lastTelemetryNanos = now
             val lat = lastLat; val lng = lastLng; val spd = currentDisplayKmh
@@ -430,22 +427,25 @@ class LocationService : Service(), SensorEventListener {
                 )
             }
         }
-
-        // Phone battery temperature: separate, slow, resilient (a missing
-        // battery_temp column can't break the main telemetry above).
-        if (now - lastTempSentNanos >= TEMP_INTERVAL_NS) {
-            lastTempSentNanos = now
-            val tempC = getBatteryTemp()
-            if (!tempC.isNaN()) {
-                Log.i("SensorCheck", "Battery temp = $tempC °C (sending to Supabase)")
-                serviceScope.launch { repository.updatePhoneTemp(tempC) }
-            } else {
-                Log.w("SensorCheck", "Battery temperature not available via EXTRA_TEMPERATURE on this device")
-            }
-        }
     }
 
     // ========== GPS HEALTH ==========
+
+    /** Reports the phone battery temperature every 5 s, independent of GPS/sensors. */
+    private fun startPhoneTempReporter() {
+        serviceScope.launch {
+            while (isActive) {
+                val tempC = getBatteryTemp()
+                if (!tempC.isNaN()) {
+                    Log.i("SensorCheck", "Battery temp = $tempC °C (sending to Supabase)")
+                    repository.updatePhoneTemp(tempC)
+                } else {
+                    Log.w("SensorCheck", "Battery temperature unavailable (no EXTRA_TEMPERATURE and sysfs blocked)")
+                }
+                delay(5000L)
+            }
+        }
+    }
 
     private fun startGpsHealthMonitor() {
         serviceScope.launch {
@@ -486,7 +486,26 @@ class LocationService : Service(), SensorEventListener {
     private fun getBatteryTemp(): Double {
         val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val tenths = batteryIntent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE) ?: Int.MIN_VALUE
-        return if (tenths != Int.MIN_VALUE) tenths / 10.0 else Double.NaN
+        if (tenths != Int.MIN_VALUE && tenths != 0) return tenths / 10.0
+        // Some OnePlus/Oppo builds omit EXTRA_TEMPERATURE — fall back to sysfs.
+        return readSysfsBatteryTemp()
+    }
+
+    private fun readSysfsBatteryTemp(): Double {
+        val paths = listOf(
+            "/sys/class/power_supply/battery/temp",
+            "/sys/class/power_supply/bms/temp",
+            "/sys/class/power_supply/battery/batt_temp"
+        )
+        for (p in paths) {
+            try {
+                val raw = java.io.File(p).readText().trim().toIntOrNull() ?: continue
+                // Usually tenths of °C (e.g. 310 = 31.0°C); occasionally whole °C.
+                val c = if (kotlin.math.abs(raw) >= 100) raw / 10.0 else raw.toDouble()
+                if (c in -30.0..120.0) return c
+            } catch (e: Exception) { /* missing or SELinux-denied — try next */ }
+        }
+        return Double.NaN
     }
 
     private fun getSignalStrength(): Int {
