@@ -11,6 +11,7 @@ import { VoiceChat } from "@/components/dashboard/VoiceChat";
 import { LiveKitAudioMount } from "@/components/voice/LiveKitAudioMount";
 import DashboardGrid, { type DashboardGridHandle } from "@/components/dashboard/DashboardGrid";
 import GridCard from "@/components/dashboard/GridCard";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -130,6 +131,7 @@ const Index = () => {
       <header className="mb-8 flex items-center justify-between">
         <img src={chalmersLogo} alt="Chalmers Vera Team" className="h-12 w-auto" />
         <div className="flex items-center gap-3">
+          <ThemeToggle />
           {user ? (
             <>
               {isAdmin && (

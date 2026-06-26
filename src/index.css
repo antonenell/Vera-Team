@@ -95,6 +95,15 @@ All colors MUST be HSL.
     --tracking-normal: 0em;
 
     --spacing: 0.25rem;
+
+    /* Racing accent colors — light-mode variants (darker/saturated for contrast
+       on a light background; the bright versions live in .dark). */
+    --racing-blue: 200 90% 42%;
+    --racing-green: 160 80% 34%;
+    --racing-orange: 28 92% 46%;
+    --racing-red: 0 78% 50%;
+    --racing-purple: 260 65% 52%;
+    --racing-cyan: 190 80% 36%;
   }
 
   .dark {
