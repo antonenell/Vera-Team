@@ -55,7 +55,7 @@ const LapTimes = ({ lapTimes, currentLap, totalLaps, targetLapTime, currentLapEl
         Target: {formatTime(Math.round(targetLapTime))} per lap
       </p>
       
-      <ScrollArea className="flex-1 -mx-2 px-2">
+      <ScrollArea className="no-drag flex-1 -mx-2 px-2">
         <div className="space-y-2">
           {/* Current lap indicator */}
           {currentLap > lapTimes.length && currentLapElapsed > 0 && (

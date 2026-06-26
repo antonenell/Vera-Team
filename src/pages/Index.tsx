@@ -277,38 +277,42 @@ const Index = () => {
 
         <div key="raceProgress">
           <GridCard editMode={editMode}>
-            <div className="glass-card relative rounded-2xl p-6 h-full overflow-hidden flex flex-col">
+            <div className="glass-card relative rounded-2xl p-6 h-full flex flex-col">
               <Activity className="w-8 h-8 mb-4 text-racing-blue shrink-0" strokeWidth={1.5} />
               <p className="text-muted-foreground text-sm font-medium mb-2 uppercase tracking-wide shrink-0">
                 Race Progress
               </p>
-              <div className="flex-1 flex items-end min-h-0">
-                <div className="w-full">
-                  <div className="flex items-baseline gap-2 mb-4">
-                    <span className="text-5xl font-bold text-racing-blue font-mono">
-                      {currentLap}
-                    </span>
-                    <span className="text-2xl text-muted-foreground">/ {totalLaps}</span>
-                    <span className="text-muted-foreground ml-2">laps</span>
+              <div className="flex items-baseline gap-2 mb-4 shrink-0">
+                <span className="text-5xl font-bold text-racing-blue font-mono">
+                  {currentLap}
+                </span>
+                <span className="text-2xl text-muted-foreground">/ {totalLaps}</span>
+                <span className="text-muted-foreground ml-2">laps</span>
+              </div>
+              {/* Lap dots — reflow to the tile width and scale so any lap count fits;
+                  scroll as a last-resort backstop so nothing is ever hidden. */}
+              <div
+                className="flex-1 min-h-0 overflow-y-auto no-drag grid gap-2 content-start p-1"
+                style={{
+                  gridTemplateColumns: "repeat(auto-fit, minmax(min(26px, 100%), 1fr))",
+                  containerType: "inline-size",
+                }}
+              >
+                {Array.from({ length: totalLaps }, (_, i) => (
+                  <div
+                    key={i}
+                    className={`aspect-square w-full max-w-[30px] rounded-full flex items-center justify-center font-bold transition-all ${
+                      i < currentLap
+                        ? "bg-racing-blue text-background"
+                        : i === currentLap
+                          ? "bg-racing-orange text-background ring-2 ring-racing-orange ring-offset-2 ring-offset-card"
+                          : "bg-muted text-muted-foreground"
+                    }`}
+                    style={{ fontSize: "clamp(8px, 2.2cqi, 12px)" }}
+                  >
+                    {i + 1}
                   </div>
-                  {/* Lap progress dots */}
-                  <div className="flex gap-2 flex-wrap">
-                    {Array.from({ length: totalLaps }, (_, i) => (
-                      <div
-                        key={i}
-                        className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                          i < currentLap
-                            ? "bg-racing-blue text-background"
-                            : i === currentLap
-                              ? "bg-racing-orange text-background ring-2 ring-racing-orange ring-offset-2 ring-offset-card"
-                              : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {i + 1}
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
           </GridCard>
@@ -316,7 +320,7 @@ const Index = () => {
 
         <div key="bestLap">
           <GridCard editMode={editMode}>
-            <div className="glass-card relative rounded-2xl p-6 h-full overflow-hidden flex flex-col">
+            <div className="glass-card relative rounded-2xl p-6 h-full flex flex-col">
               <Activity className="w-8 h-8 mb-4 text-racing-green shrink-0" strokeWidth={1.5} />
               <p className="text-muted-foreground text-sm font-medium mb-2 uppercase tracking-wide shrink-0">
                 Best Lap (Target: {Math.floor(targetLapTime / 60)}:{Math.round(targetLapTime % 60).toString().padStart(2, "0")})

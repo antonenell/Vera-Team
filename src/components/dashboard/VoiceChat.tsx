@@ -151,7 +151,7 @@ export function VoiceChat({ api, isAdmin, className }: VoiceChatProps) {
               Deltagare {isConnected && `(${participants.length})`}
             </span>
           </div>
-          <ScrollArea className="flex-1 min-h-[80px]">
+          <ScrollArea className="no-drag flex-1 min-h-[56px]">
             {participants.length === 0 ? (
               <p className="text-xs text-muted-foreground py-2">
                 {isOffline ? "Anslut för att se vilka som är med" : "Inga andra deltagare"}
