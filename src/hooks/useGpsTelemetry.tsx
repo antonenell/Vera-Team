@@ -106,6 +106,7 @@ export const useGpsTelemetry = () => {
     batteryTemp: telemetry.batteryTemp,
     signalStrength: telemetry.signalStrength,
     isOnline: telemetry.isOnline,
+    timestamp: telemetry.timestamp,
     isLoading,
   };
 };

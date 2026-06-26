@@ -58,6 +58,8 @@ const Index = () => {
   const {
     position: carPosition,
     speed: gpsSpeed,
+    accuracy: gpsAccuracy,
+    timestamp: gpsTimestamp,
     isOnline: driverDisplayOnline,
     batteryLevel,
     batteryTemp,
@@ -199,6 +201,9 @@ const Index = () => {
               isAdmin={isAdmin}
               isCarOnline={driverDisplayOnline}
               gridEditMode={editMode}
+              accuracy={gpsAccuracy}
+              speed={gpsSpeed / 3.6}
+              gpsTimestamp={gpsTimestamp}
             />
           </GridCard>
         </div>

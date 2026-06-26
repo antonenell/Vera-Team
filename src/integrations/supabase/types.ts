@@ -92,6 +92,24 @@ export type Database = {
         }
         Relationships: []
       }
+      track_paths: {
+        Row: {
+          path: Json
+          track_id: string
+          updated_at: string
+        }
+        Insert: {
+          path?: Json
+          track_id: string
+          updated_at?: string
+        }
+        Update: {
+          path?: Json
+          track_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string

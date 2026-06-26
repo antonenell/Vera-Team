@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from "react";
-import { MapPin, Flag, RotateCcw, ChevronDown, Pencil, Check } from "lucide-react";
+import { MapPin, Flag, RotateCcw, ChevronDown, Pencil, Check, Circle, Square, Route } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,11 +11,18 @@ import {
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useTrackFlags, tracks, TrackName, FlagColor, FlagData } from "@/hooks/useTrackFlags";
+import { useTrackPath, type LngLat } from "@/hooks/useTrackPath";
+import { cleanTrack, type RawFix } from "@/lib/trackCleanup";
 
 const MAPBOX_TOKEN = "pk.eyJ1IjoiY2FybGJlcmdlIiwiYSI6ImNsMnh3OXZrYTBsNzUzaWp6NzlvdDM4bzgifQ.YiaCxeUA5RaJn7071yd42A";
 
 const SOURCE_ID = "flags-source";
 const LAYER_ID = "flags-layer";
+const TRACK_LINE_SOURCE = "track-line-source";
+const TRACK_CASING_LAYER = "track-casing-layer";
+const TRACK_LINE_LAYER = "track-line-layer";
+const TRACK_VERTS_SOURCE = "track-verts-source";
+const TRACK_VERTS_LAYER = "track-verts-layer";
 
 interface GPSTrackProps {
   position: { lat: number; lng: number };
@@ -25,6 +32,10 @@ interface GPSTrackProps {
   /** True while the dashboard grid is in layout-edit mode — hides this card's own
    *  flag-editing controls so the only affordance is the grid Move/resize. */
   gridEditMode?: boolean;
+  /** Live telemetry detail the track recorder needs (beyond position). */
+  accuracy?: number;
+  speed?: number;
+  gpsTimestamp?: string;
 }
 
 /** Imperative handle so the grid can re-measure / re-frame the Mapbox canvas after a resize. */
@@ -99,9 +110,21 @@ const FLAG_OPTIONS: { color: FlagColor; label: string }[] = [
 
 type LngLatTuple = [number, number];
 
-const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, className, isAdmin = false, isCarOnline = false, gridEditMode = false }, ref) => {
+/** Pixel distance from point (px,py) to segment (ax,ay)-(bx,by) — for line-insert. */
+const distPointToSegment = (px: number, py: number, ax: number, ay: number, bx: number, by: number): number => {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+};
+
+const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, className, isAdmin = false, isCarOnline = false, gridEditMode = false, accuracy = 0, speed = 0, gpsTimestamp }, ref) => {
   const [selectedTrack, setSelectedTrack] = useState<TrackName>("silesia-ring");
   const [editMode, setEditMode] = useState(false);
+  const [recordMode, setRecordMode] = useState(false);
+  const [trackEditMode, setTrackEditMode] = useState(false);
   const track = tracks[selectedTrack];
 
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -170,6 +193,42 @@ const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, classNam
   const readyRef = useRef(false);
   const colorPopupRef = useRef<mapboxgl.Popup | null>(null);
   const popupFlagIdRef = useRef<string | null>(null);
+
+  // ===== Track maker =====
+  const { path, savePath, clearPath } = useTrackPath(isAdmin, selectedTrack);
+
+  const trackPointsRef = useRef<LngLat[]>([]);     // the saved/edited track (working copy)
+  const recordedRef = useRef<RawFix[]>([]);         // live recording buffer
+  const recordModeRef = useRef(recordMode);
+  const trackEditModeRef = useRef(trackEditMode);
+  const savePathRef = useRef(savePath);
+  const refreshTrackSourceRef = useRef<() => void>(() => {});
+  const vertPopupRef = useRef<mapboxgl.Popup | null>(null);
+  // Vertex drag state (mirrors the flag drag refs).
+  const vDragIdxRef = useRef<number | null>(null);
+  const vDragLngLatRef = useRef<LngLat | null>(null);
+  const vDragMovedRef = useRef(false);
+  const vDragStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => { recordModeRef.current = recordMode; }, [recordMode]);
+  useEffect(() => { trackEditModeRef.current = trackEditMode; }, [trackEditMode]);
+  useEffect(() => { savePathRef.current = savePath; }, [savePath]);
+
+  // Mirror the saved path into the working copy + redraw (unless mid-recording,
+  // when the live breadcrumb owns the line). Never swap the array out from under
+  // an in-flight vertex drag — the drag holds a positional index committed only on
+  // release, so a concurrent realtime update would otherwise move the wrong vertex.
+  useEffect(() => {
+    if (vDragIdxRef.current != null) return;
+    trackPointsRef.current = path;
+    if (readyRef.current && !recordModeRef.current) refreshTrackSourceRef.current();
+  }, [path]);
+
+  // Only one map-edit mode at a time; none survive losing admin or grid-edit mode.
+  useEffect(() => {
+    if ((!isAdmin || gridEditMode) && recordMode) setRecordMode(false);
+    if ((!isAdmin || gridEditMode) && trackEditMode) setTrackEditMode(false);
+  }, [isAdmin, gridEditMode, recordMode, trackEditMode]);
 
   useEffect(() => {
     if (!isAdmin && editMode) setEditMode(false);
@@ -278,6 +337,118 @@ const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, classNam
     };
     refreshSourceRef.current = refreshSource;
 
+    // ===== Track line + vertices =====
+    const trackEditable = () => isAdminRef.current && trackEditModeRef.current;
+    const isClosed = (pts: LngLat[]) =>
+      pts.length > 3 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1];
+
+    const buildTrackLine = (): GeoJSON.FeatureCollection => {
+      let coords: LngLat[];
+      if (recordModeRef.current) {
+        coords = recordedRef.current.map((f) => [f.lng, f.lat]);
+      } else {
+        const pts = trackPointsRef.current;
+        coords = pts.map((p, i) => (vDragIdxRef.current === i && vDragLngLatRef.current ? vDragLngLatRef.current : p));
+        // A closed ring duplicates the start at the end; keep both ends together
+        // so the loop doesn't visibly tear open while dragging the start vertex.
+        if (isClosed(pts) && vDragIdxRef.current === 0 && vDragLngLatRef.current && coords.length > 1) {
+          coords[coords.length - 1] = vDragLngLatRef.current;
+        }
+      }
+      if (coords.length < 2) return { type: "FeatureCollection", features: [] };
+      return {
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: coords } }],
+      };
+    };
+
+    const buildVerts = (): GeoJSON.FeatureCollection => {
+      if (!trackEditModeRef.current || recordModeRef.current) return { type: "FeatureCollection", features: [] };
+      const pts = trackPointsRef.current;
+      const n = isClosed(pts) ? pts.length - 1 : pts.length; // skip the duplicate closing vertex
+      const features: GeoJSON.Feature[] = [];
+      for (let i = 0; i < n; i++) {
+        const coords = vDragIdxRef.current === i && vDragLngLatRef.current ? vDragLngLatRef.current : pts[i];
+        features.push({ type: "Feature", properties: { vertIndex: i }, geometry: { type: "Point", coordinates: coords } });
+      }
+      return { type: "FeatureCollection", features };
+    };
+
+    const refreshTrackSource = () => {
+      (m.getSource(TRACK_LINE_SOURCE) as mapboxgl.GeoJSONSource | undefined)?.setData(buildTrackLine());
+      (m.getSource(TRACK_VERTS_SOURCE) as mapboxgl.GeoJSONSource | undefined)?.setData(buildVerts());
+    };
+    refreshTrackSourceRef.current = refreshTrackSource;
+
+    const commitTrackPoints = (next: LngLat[]) => {
+      trackPointsRef.current = next;
+      refreshTrackSource();
+      savePathRef.current(next);
+    };
+
+    const moveVertex = (vi: number, lng: number, lat: number) => {
+      const pts = trackPointsRef.current;
+      if (vi < 0 || vi >= pts.length) return;
+      const closed = isClosed(pts);
+      const next = pts.map((p) => [p[0], p[1]] as LngLat);
+      next[vi] = [lng, lat];
+      if (closed && vi === 0) next[next.length - 1] = [lng, lat]; // keep the ring closed
+      commitTrackPoints(next);
+    };
+
+    const deleteVertex = (vi: number) => {
+      const pts = trackPointsRef.current;
+      if (vi < 0 || vi >= pts.length) return;
+      const closed = isClosed(pts);
+      const next = pts.map((p) => [p[0], p[1]] as LngLat);
+      next.splice(vi, 1);
+      if (closed && vi === 0 && next.length > 1) next[next.length - 1] = [next[0][0], next[0][1]];
+      commitTrackPoints(next.length >= 2 ? next : []);
+    };
+
+    const insertVertex = (lngLat: mapboxgl.LngLat) => {
+      const pts = trackPointsRef.current;
+      if (pts.length < 2) {
+        commitTrackPoints([...pts.map((p) => [p[0], p[1]] as LngLat), [lngLat.lng, lngLat.lat]]);
+        return;
+      }
+      const click = m.project(lngLat);
+      let bestI = 0;
+      let bestD = Infinity;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = m.project(pts[i] as [number, number]);
+        const b = m.project(pts[i + 1] as [number, number]);
+        const d = distPointToSegment(click.x, click.y, a.x, a.y, b.x, b.y);
+        if (d < bestD) {
+          bestD = d;
+          bestI = i;
+        }
+      }
+      const next = pts.map((p) => [p[0], p[1]] as LngLat);
+      next.splice(bestI + 1, 0, [lngLat.lng, lngLat.lat]);
+      commitTrackPoints(next);
+    };
+
+    const openVertPopup = (vi: number, coord: LngLat) => {
+      vertPopupRef.current?.remove();
+      const content = document.createElement("div");
+      content.style.cssText = "padding:6px;min-width:110px;";
+      const del = document.createElement("button");
+      del.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 10px;background:transparent;border:none;border-radius:4px;color:#f87171;font-size:12px;cursor:pointer;width:100%;text-align:left;";
+      del.innerHTML = `<span style="font-size:14px;line-height:1;">&times;</span> Delete point`;
+      del.addEventListener("mouseenter", () => { del.style.background = "hsl(217.2 32.6% 17.5%)"; });
+      del.addEventListener("mouseleave", () => { del.style.background = "transparent"; });
+      const popup = new mapboxgl.Popup({ closeButton: false, closeOnClick: true, offset: 12, className: "flag-popup-custom" });
+      del.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        deleteVertex(vi);
+        popup.remove();
+      });
+      content.appendChild(del);
+      popup.setDOMContent(content).setLngLat(coord).addTo(m);
+      vertPopupRef.current = popup;
+    };
+
     const editable = () => isAdminRef.current && editModeRef.current;
 
     const onLoad = async () => {
@@ -290,6 +461,53 @@ const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, classNam
       // Bail if the map was removed while the images were decoding — touching a
       // removed map's style throws and would corrupt readyRef.
       if (disposed || map.current !== m) return;
+
+      // Track line (+ dark casing) BELOW the flags so flags always sit on top.
+      if (!m.getSource(TRACK_LINE_SOURCE)) {
+        m.addSource(TRACK_LINE_SOURCE, { type: "geojson", data: buildTrackLine() });
+      }
+      if (!m.getLayer(TRACK_CASING_LAYER)) {
+        m.addLayer({
+          id: TRACK_CASING_LAYER,
+          type: "line",
+          source: TRACK_LINE_SOURCE,
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": "hsl(160, 84%, 10%)",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 12, 5, 17, 10],
+            "line-opacity": 0.85,
+          },
+        });
+      }
+      if (!m.getLayer(TRACK_LINE_LAYER)) {
+        m.addLayer({
+          id: TRACK_LINE_LAYER,
+          type: "line",
+          source: TRACK_LINE_SOURCE,
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": "hsl(142, 71%, 45%)",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 12, 2.5, 17, 6],
+          },
+        });
+      }
+      if (!m.getSource(TRACK_VERTS_SOURCE)) {
+        m.addSource(TRACK_VERTS_SOURCE, { type: "geojson", data: buildVerts() });
+      }
+      if (!m.getLayer(TRACK_VERTS_LAYER)) {
+        m.addLayer({
+          id: TRACK_VERTS_LAYER,
+          type: "circle",
+          source: TRACK_VERTS_SOURCE,
+          paint: {
+            "circle-radius": 5,
+            "circle-color": "#ffffff",
+            "circle-stroke-color": "hsl(142, 71%, 45%)",
+            "circle-stroke-width": 2,
+          },
+        });
+      }
+
       if (!m.getSource(SOURCE_ID)) {
         m.addSource(SOURCE_ID, { type: "geojson", data: buildFeatureCollection() });
       }
@@ -316,10 +534,11 @@ const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, classNam
       }
       readyRef.current = true;
       refreshSource();
+      refreshTrackSource();
     };
     m.on("load", onLoad);
 
-    // --- Click: open a flag's popup, or add a flag on empty map (edit mode) ---
+    // --- Click: flags (popup/add), or track editing (vertex delete / insert / append) ---
     const onClick = (e: mapboxgl.MapMouseEvent) => {
       const feats = m.queryRenderedFeatures(e.point, { layers: [LAYER_ID] });
       if (feats.length) {
@@ -331,6 +550,29 @@ const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, classNam
         openFlagPopup(flagId, coord, editable());
         return;
       }
+
+      if (trackEditable()) {
+        const box: [mapboxgl.PointLike, mapboxgl.PointLike] = [
+          [e.point.x - 8, e.point.y - 8],
+          [e.point.x + 8, e.point.y + 8],
+        ];
+        const vFeats = m.queryRenderedFeatures(box, { layers: [TRACK_VERTS_LAYER] });
+        if (vFeats.length) {
+          const vi = (vFeats[0].properties as { vertIndex?: number })?.vertIndex;
+          const coord = (vFeats[0].geometry as GeoJSON.Point).coordinates as LngLat;
+          if (typeof vi === "number") openVertPopup(vi, coord);
+          return;
+        }
+        const lFeats = m.queryRenderedFeatures(box, { layers: [TRACK_LINE_LAYER] });
+        if (lFeats.length) {
+          insertVertex(e.lngLat);
+          return;
+        }
+        // empty map → append a point to the end of the track
+        commitTrackPoints([...trackPointsRef.current.map((p) => [p[0], p[1]] as LngLat), [e.lngLat.lng, e.lngLat.lat]]);
+        return;
+      }
+
       if (!editable()) return;
       addFlagRef.current(e.lngLat.lng, e.lngLat.lat);
     };
@@ -432,6 +674,89 @@ const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, classNam
     };
     m.on("touchstart", LAYER_ID, onTouchStart);
 
+    // --- Track vertex drag (mirrors the flag drag exactly, with its own state) ---
+    const onVertWinUp = (ev: MouseEvent) => {
+      window.removeEventListener("mousemove", onVertWinMove);
+      window.removeEventListener("mouseup", onVertWinUp);
+      const vi = vDragIdxRef.current;
+      const moved = vDragMovedRef.current;
+      const last = vDragLngLatRef.current;
+      vDragIdxRef.current = null;
+      vDragLngLatRef.current = null;
+      vDragMovedRef.current = false;
+      vDragStartRef.current = null;
+      canvas().style.cursor = trackEditable() ? "crosshair" : "";
+      if (vi != null && moved && last) moveVertex(vi, last[0], last[1]);
+      else refreshTrackSource();
+    };
+    const onVertWinMove = (ev: MouseEvent) => {
+      if (vDragIdxRef.current == null) return;
+      if (ev.buttons === 0) { onVertWinUp(ev); return; }
+      const start = vDragStartRef.current;
+      if (!vDragMovedRef.current) {
+        if (start && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < DRAG_THRESHOLD) return;
+        vDragMovedRef.current = true;
+      }
+      vDragLngLatRef.current = clientToLngLat(ev.clientX, ev.clientY);
+      refreshTrackSource();
+    };
+    const onVertDragStart = (e: mapboxgl.MapLayerMouseEvent) => {
+      if (!trackEditable() || !e.features?.length) return;
+      e.preventDefault();
+      const vi = (e.features[0].properties as { vertIndex?: number })?.vertIndex;
+      if (typeof vi !== "number") return;
+      vDragIdxRef.current = vi;
+      vDragMovedRef.current = false;
+      vDragLngLatRef.current = null;
+      vDragStartRef.current = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };
+      canvas().style.cursor = "grabbing";
+      window.addEventListener("mousemove", onVertWinMove);
+      window.addEventListener("mouseup", onVertWinUp);
+    };
+    m.on("mousedown", TRACK_VERTS_LAYER, onVertDragStart);
+
+    const onVertTouchMove = (e: mapboxgl.MapTouchEvent) => {
+      if (vDragIdxRef.current == null) return;
+      e.preventDefault();
+      const start = vDragStartRef.current;
+      if (!vDragMovedRef.current) {
+        if (start && Math.hypot(e.point.x - start.x, e.point.y - start.y) < DRAG_THRESHOLD) return;
+        vDragMovedRef.current = true;
+      }
+      vDragLngLatRef.current = [e.lngLat.lng, e.lngLat.lat];
+      refreshTrackSource();
+    };
+    const onVertTouchEnd = () => {
+      m.off("touchmove", onVertTouchMove);
+      const vi = vDragIdxRef.current;
+      const moved = vDragMovedRef.current;
+      const last = vDragLngLatRef.current;
+      vDragIdxRef.current = null;
+      vDragLngLatRef.current = null;
+      vDragMovedRef.current = false;
+      vDragStartRef.current = null;
+      if (vi != null && moved && last) moveVertex(vi, last[0], last[1]);
+      else refreshTrackSource();
+    };
+    const onVertTouchStart = (e: mapboxgl.MapLayerTouchEvent) => {
+      if (!trackEditable() || !e.features?.length || e.points.length !== 1) return;
+      e.preventDefault();
+      const vi = (e.features[0].properties as { vertIndex?: number })?.vertIndex;
+      if (typeof vi !== "number") return;
+      vDragIdxRef.current = vi;
+      vDragMovedRef.current = false;
+      vDragLngLatRef.current = null;
+      vDragStartRef.current = { x: e.point.x, y: e.point.y };
+      m.on("touchmove", onVertTouchMove);
+      m.once("touchend", onVertTouchEnd);
+    };
+    m.on("touchstart", TRACK_VERTS_LAYER, onVertTouchStart);
+
+    const onVertEnter = () => { canvas().style.cursor = trackEditable() ? "move" : ""; };
+    const onVertLeave = () => { canvas().style.cursor = trackEditable() ? "crosshair" : ""; };
+    m.on("mouseenter", TRACK_VERTS_LAYER, onVertEnter);
+    m.on("mouseleave", TRACK_VERTS_LAYER, onVertLeave);
+
     // Car marker — plain HTML marker (inherits Mapbox's absolute positioning,
     // so it tracks the map correctly). Hidden until the car is online.
     const carEl = document.createElement("div");
@@ -452,10 +777,15 @@ const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, classNam
       if (resizeRafRef.current != null) cancelAnimationFrame(resizeRafRef.current);
       window.removeEventListener("mousemove", onWinMove);
       window.removeEventListener("mouseup", onWinUp);
+      window.removeEventListener("mousemove", onVertWinMove);
+      window.removeEventListener("mouseup", onVertWinUp);
       readyRef.current = false;
       refreshSourceRef.current = () => {};
+      refreshTrackSourceRef.current = () => {};
       colorPopupRef.current?.remove();
       colorPopupRef.current = null;
+      vertPopupRef.current?.remove();
+      vertPopupRef.current = null;
       carMarkerRef.current?.remove();
       carMarkerRef.current = null;
       m.remove();
@@ -495,16 +825,16 @@ const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, classNam
     }
   }, [position, isCarOnline]);
 
-  // Crosshair cursor + no double-click-zoom while placing flags.
+  // Crosshair cursor + no double-click-zoom while placing flags or editing the track.
   useEffect(() => {
     const m = map.current;
     if (!m) return;
-    const placing = isAdmin && editMode;
+    const placing = isAdmin && (editMode || trackEditMode);
     const canvas = m.getCanvas();
     if (canvas) canvas.style.cursor = placing ? "crosshair" : "";
     if (placing) m.doubleClickZoom.disable();
     else m.doubleClickZoom.enable();
-  }, [editMode, isAdmin]);
+  }, [editMode, trackEditMode, isAdmin]);
 
   // Fit bounds when track changes.
   useEffect(() => {
@@ -512,6 +842,80 @@ const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, classNam
       map.current.fitBounds(track.bounds, { padding: 10, duration: 1000 });
     }
   }, [selectedTrack, track.bounds]);
+
+  // Record each new phone fix into the buffer while recording, drawing the live
+  // breadcrumb. Heavy cleanup happens on Done; here we only drop obvious junk.
+  // De-dupe on POSITION, not the telemetry timestamp (that column is frozen — the
+  // phone only updates updated_at), and stamp receipt time as the fix time.
+  useEffect(() => {
+    if (!recordMode || !isCarOnline) return;
+    if (position.lat === 0 && position.lng === 0) return;
+    if (accuracy > 20) return; // momentary bad fix (cleanup re-gates at 15 m)
+    const prev = recordedRef.current[recordedRef.current.length - 1];
+    if (prev && prev.lng === position.lng && prev.lat === position.lat) return; // re-delivered fix
+    recordedRef.current.push({ lng: position.lng, lat: position.lat, accuracy, speed, t: Date.now() });
+    if (readyRef.current) refreshTrackSourceRef.current();
+  }, [position, recordMode, isCarOnline, accuracy, speed]);
+
+  // Show/hide the vertex handles when entering/leaving track-edit mode.
+  useEffect(() => {
+    if (readyRef.current) refreshTrackSourceRef.current();
+  }, [trackEditMode]);
+
+  const fitToTrack = (pts: LngLat[]) => {
+    const m = map.current;
+    if (!m || pts.length < 2) return;
+    const b = new mapboxgl.LngLatBounds();
+    pts.forEach((p) => b.extend(p as [number, number]));
+    m.fitBounds(b, { padding: 30, duration: 800 });
+  };
+
+  const startRecording = () => {
+    if (!isAdmin) return;
+    setEditMode(false);
+    setTrackEditMode(false);
+    recordedRef.current = [];
+    trackPointsRef.current = [];
+    refreshTrackSourceRef.current();
+    setRecordMode(true);
+  };
+
+  const stopRecording = () => {
+    setRecordMode(false);
+    const lat0 = (track.bounds[0][1] + track.bounds[1][1]) / 2;
+    const { points } = cleanTrack(recordedRef.current, lat0);
+    recordedRef.current = [];
+    // Too few usable fixes (no GPS lock / mis-tap): keep any previously-saved track
+    // instead of overwriting it with nothing. trackPointsRef still holds it.
+    if (points.length < 2) {
+      refreshTrackSourceRef.current();
+      return;
+    }
+    trackPointsRef.current = points;
+    refreshTrackSourceRef.current();
+    savePath(points);
+    fitToTrack(points);
+  };
+
+  const toggleTrackEdit = () => {
+    if (!isAdmin) return;
+    setTrackEditMode((v) => {
+      const next = !v;
+      if (next) {
+        setEditMode(false);
+        setRecordMode(false);
+      }
+      return next;
+    });
+  };
+
+  const deleteTrack = () => {
+    if (!isAdmin) return;
+    setTrackEditMode(false);
+    trackPointsRef.current = [];
+    refreshTrackSourceRef.current();
+    clearPath();
+  };
 
   const handleTrackChange = (trackName: TrackName) => setSelectedTrack(trackName);
 
@@ -542,25 +946,90 @@ const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, classNam
         </div>
         {isAdmin && !gridEditMode && (
           <div className="flex items-center gap-1">
-            <Button
-              variant={editMode ? "default" : "ghost"}
-              size="sm"
-              className="h-6 px-2 text-xs gap-1"
-              onClick={() => setEditMode((v) => !v)}
-              title={editMode ? "Finish editing flags" : "Edit flag positions"}
-            >
-              {editMode ? <Check className="w-3 h-3" /> : <Pencil className="w-3 h-3" />}
-              {editMode ? "Done" : "Edit"}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={resetFlags}
-              title="Set all flags to neutral"
-            >
-              <RotateCcw className="w-3 h-3" />
-            </Button>
+            {recordMode ? (
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-6 px-2 text-xs gap-1"
+                onClick={stopRecording}
+                title="Stop recording, clean up and save the track"
+              >
+                <Square className="w-3 h-3" />
+                Stop
+              </Button>
+            ) : trackEditMode ? (
+              <>
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="h-6 px-2 text-xs gap-1"
+                  onClick={toggleTrackEdit}
+                  title="Finish editing the track"
+                >
+                  <Check className="w-3 h-3" />
+                  Done
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-racing-red"
+                  onClick={deleteTrack}
+                  title="Delete this track"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant={editMode ? "default" : "ghost"}
+                  size="sm"
+                  className="h-6 px-2 text-xs gap-1"
+                  onClick={() => setEditMode((v) => !v)}
+                  title={editMode ? "Finish editing flags" : "Edit flag positions"}
+                >
+                  {editMode ? <Check className="w-3 h-3" /> : <Pencil className="w-3 h-3" />}
+                  {editMode ? "Done" : "Flags"}
+                </Button>
+                {editMode && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={resetFlags}
+                    title="Set all flags to neutral"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                  </Button>
+                )}
+                {!editMode && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs gap-1"
+                      onClick={startRecording}
+                      title="Record a new track by driving the circuit"
+                    >
+                      <Circle className="w-3 h-3 fill-racing-red text-racing-red" />
+                      Record
+                    </Button>
+                    {path.length > 1 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs gap-1"
+                        onClick={toggleTrackEdit}
+                        title="Tweak the track shape"
+                      >
+                        <Route className="w-3 h-3" />
+                        Track
+                      </Button>
+                    )}
+                  </>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>
@@ -579,9 +1048,16 @@ const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, classNam
           }
         `}</style>
         <div ref={mapContainer} className="no-drag absolute inset-0 [&_.mapboxgl-ctrl-logo]:hidden" />
-        {isAdmin && editMode && (
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full bg-background/80 backdrop-blur-md border border-border/40 shadow-lg text-[11px] text-foreground whitespace-nowrap pointer-events-none">
-            Click map to add · drag flag to move · click flag to recolour / delete
+        {isAdmin && (editMode || recordMode || trackEditMode) && (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full bg-background/80 backdrop-blur-md border border-border/40 shadow-lg text-[11px] text-foreground whitespace-nowrap pointer-events-none flex items-center gap-2">
+            {recordMode && (
+              <>
+                <span className="w-2 h-2 rounded-full bg-racing-red animate-pulse" />
+                Recording — drive the circuit, then press Stop
+              </>
+            )}
+            {trackEditMode && "Drag a point to move · click the line to add · click a point to delete"}
+            {editMode && "Click map to add · drag flag to move · click flag to recolour / delete"}
           </div>
         )}
       </div>
