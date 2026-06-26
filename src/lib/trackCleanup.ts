@@ -27,7 +27,7 @@ export const TRACK_CLEANUP = {
   MIN_STEP_M: 2, // keep at most one point per ~2 m (kills standstill jitter)
   SMOOTH_WINDOW: 5, // centred moving-average window
   LOOP_CLOSE_M: 20, // snap end→start if within this…
-  MIN_LOOP_LENGTH_M: 300, // …and the lap is at least this long
+  MIN_LOOP_LENGTH_M: 120, // …and the lap is at least this long (avoids closing a short out-and-back)
   SIMPLIFY_TOLERANCE_M: 2, // RDP tolerance (honest metres)
 } as const;
 

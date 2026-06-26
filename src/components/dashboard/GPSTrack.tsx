@@ -13,6 +13,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import { useTrackFlags, tracks, TrackName, FlagColor, FlagData } from "@/hooks/useTrackFlags";
 import { useTrackPath, type LngLat } from "@/hooks/useTrackPath";
 import { cleanTrack, type RawFix } from "@/lib/trackCleanup";
+import { useToast } from "@/hooks/use-toast";
 
 const MAPBOX_TOKEN = "pk.eyJ1IjoiY2FybGJlcmdlIiwiYSI6ImNsMnh3OXZrYTBsNzUzaWp6NzlvdDM4bzgifQ.YiaCxeUA5RaJn7071yd42A";
 
@@ -126,6 +127,7 @@ const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, classNam
   const [recordMode, setRecordMode] = useState(false);
   const [trackEditMode, setTrackEditMode] = useState(false);
   const track = tracks[selectedTrack];
+  const { toast } = useToast();
 
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -880,21 +882,35 @@ const GPSTrack = forwardRef<GPSTrackHandle, GPSTrackProps>(({ position, classNam
     setRecordMode(true);
   };
 
-  const stopRecording = () => {
+  const stopRecording = async () => {
     setRecordMode(false);
+    recordModeRef.current = false; // so the synchronous redraw below reads trackPointsRef, not the buffer
     const lat0 = (track.bounds[0][1] + track.bounds[1][1]) / 2;
     const { points } = cleanTrack(recordedRef.current, lat0);
+    const rawCount = recordedRef.current.length;
     recordedRef.current = [];
-    // Too few usable fixes (no GPS lock / mis-tap): keep any previously-saved track
-    // instead of overwriting it with nothing. trackPointsRef still holds it.
+    // Too few usable fixes: keep any previously-saved track instead of wiping it.
     if (points.length < 2) {
       refreshTrackSourceRef.current();
+      toast({
+        title: "No track recorded",
+        description: rawCount === 0
+          ? "No GPS fixes came in — is the driver phone online and moving?"
+          : "Too few clean points. Drive/walk the full circuit, then press Stop.",
+      });
       return;
     }
+    // Draw it immediately (independent of the save).
     trackPointsRef.current = points;
     refreshTrackSourceRef.current();
-    savePath(points);
     fitToTrack(points);
+    const ok = await savePath(points);
+    if (!ok) {
+      toast({
+        title: "Track shown, but not saved",
+        description: "Couldn't write to the database — apply the track_paths migration in Supabase so it persists and other viewers see it.",
+      });
+    }
   };
 
   const toggleTrackEdit = () => {

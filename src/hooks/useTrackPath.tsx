@@ -68,15 +68,14 @@ export const useTrackPath = (isAdmin: boolean, selectedTrack: TrackName) => {
     };
   }, [selectedTrack]);
 
-  // Admin-gated optimistic upsert (single row per track).
+  // Admin-gated optimistic upsert (single row per track). The optimistic value is
+  // KEPT even if the save fails, so a freshly-recorded track is never lost from
+  // the screen (e.g. if the migration hasn't been applied yet). Returns whether it
+  // actually persisted so the caller can warn.
   const savePath = useCallback(
-    async (points: LngLat[]) => {
-      if (!isAdmin) return;
-      let prev: LngLat[] = [];
-      setPath((cur) => {
-        prev = cur;
-        return points;
-      });
+    async (points: LngLat[]): Promise<boolean> => {
+      if (!isAdmin) return false;
+      setPath(points);
       dirtyRef.current = true;
 
       const { error } = await supabase.from("track_paths").upsert(
@@ -90,9 +89,9 @@ export const useTrackPath = (isAdmin: boolean, selectedTrack: TrackName) => {
 
       if (error) {
         console.error("savePath failed:", error);
-        // Only roll back if a realtime update hasn't superseded our optimistic value.
-        setPath((cur) => (cur === points ? prev : cur));
+        return false;
       }
+      return true;
     },
     [isAdmin, selectedTrack]
   );
@@ -100,18 +99,10 @@ export const useTrackPath = (isAdmin: boolean, selectedTrack: TrackName) => {
   // Delete the whole track (admin).
   const clearPath = useCallback(async () => {
     if (!isAdmin) return;
-    let prev: LngLat[] = [];
-    setPath((cur) => {
-      prev = cur;
-      return [];
-    });
+    setPath([]);
     dirtyRef.current = true;
-
     const { error } = await supabase.from("track_paths").delete().eq("track_id", selectedTrack);
-    if (error) {
-      console.error("clearPath failed:", error);
-      setPath((cur) => (cur.length === 0 ? prev : cur));
-    }
+    if (error) console.error("clearPath failed:", error);
   }, [isAdmin, selectedTrack]);
 
   return { path, savePath, clearPath, isLoading };
