@@ -69,7 +69,7 @@ class VoiceController(
         } catch (e: Exception) {
             Log.e(TAG, "Connect failed: ${e.message}", e)
             cleanup()
-            _state.value = VoiceState.Error(e.message ?: "Anslutning misslyckades")
+            _state.value = VoiceState.Error(e.message ?: "Connection failed")
         }
     }
 
@@ -83,7 +83,7 @@ class VoiceController(
             }
         } catch (e: Exception) {
             Log.e(TAG, "setMuted failed: ${e.message}", e)
-            _state.value = VoiceState.Error(e.message ?: "Mute misslyckades")
+            _state.value = VoiceState.Error(e.message ?: "Mute failed")
         }
     }
 

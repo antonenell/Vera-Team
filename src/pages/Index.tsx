@@ -285,7 +285,7 @@ const Index = () => {
             <div className="glass-card relative rounded-2xl p-6 h-full flex flex-col">
               <Activity className="w-8 h-8 mb-4 text-racing-blue shrink-0" strokeWidth={1.5} />
               <p className="text-muted-foreground text-sm font-medium mb-2 uppercase tracking-wide shrink-0">
-                Race Progress
+                Lap Progress
               </p>
               <div className="flex items-baseline gap-2 mb-4 shrink-0">
                 <span className="text-5xl font-bold text-racing-blue font-mono">

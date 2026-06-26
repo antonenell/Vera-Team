@@ -79,12 +79,12 @@ fun MicButton(
 @Composable
 private fun StatusRow(state: VoiceState, hasMicPermission: Boolean) {
     val (color, label) = when {
-        !hasMicPermission && state is VoiceState.Idle -> OnSurfaceVariant to "Mic-tillstånd saknas"
+        !hasMicPermission && state is VoiceState.Idle -> OnSurfaceVariant to "Mic permission required"
         state is VoiceState.Idle -> OnSurfaceVariant to "Voice"
-        state is VoiceState.Connecting -> RacingYellow to "Ansluter…"
-        state is VoiceState.Reconnecting -> RacingYellow to "Återansluter…"
-        state is VoiceState.Connected -> RacingGreen to "Driver — ansluten"
-        state is VoiceState.Error -> RacingRed to "Fel"
+        state is VoiceState.Connecting -> RacingYellow to "Connecting…"
+        state is VoiceState.Reconnecting -> RacingYellow to "Reconnecting…"
+        state is VoiceState.Connected -> RacingGreen to "Driver — connected"
+        state is VoiceState.Error -> RacingRed to "Error"
         else -> OnSurfaceVariant to "Voice"
     }
     Row(
@@ -122,7 +122,7 @@ private fun ActionRow(
                 colors = ButtonDefaults.buttonColors(containerColor = RacingGreen),
                 contentPadding = PaddingValues(vertical = 6.dp),
             ) {
-                Text(if (state is VoiceState.Error) "Försök igen" else "Anslut", fontSize = 13.sp)
+                Text(if (state is VoiceState.Error) "Retry" else "Connect", fontSize = 13.sp)
             }
         }
         VoiceState.Connecting, VoiceState.Reconnecting -> {
@@ -132,7 +132,7 @@ private fun ActionRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                Text("Ansluter…", fontSize = 12.sp, color = OnSurfaceVariant)
+                Text("Connecting…", fontSize = 12.sp, color = OnSurfaceVariant)
             }
         }
         is VoiceState.Connected -> {

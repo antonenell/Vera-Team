@@ -20,16 +20,16 @@ function statusBadge(state: VoiceApi["state"]) {
   switch (state) {
     case "idle":
     case "disconnected":
-      return { label: "Frånkopplad", variant: "secondary" as const };
+      return { label: "Disconnected", variant: "secondary" as const };
     case "fetching-token":
     case "connecting":
-      return { label: "Ansluter…", variant: "secondary" as const };
+      return { label: "Connecting…", variant: "secondary" as const };
     case "reconnecting":
-      return { label: "Återansluter…", variant: "secondary" as const };
+      return { label: "Reconnecting…", variant: "secondary" as const };
     case "connected":
-      return { label: "Ansluten", variant: "default" as const };
+      return { label: "Connected", variant: "default" as const };
     case "error":
-      return { label: "Fel", variant: "destructive" as const };
+      return { label: "Error", variant: "destructive" as const };
   }
 }
 
@@ -80,7 +80,7 @@ export function VoiceChat({ api, isAdmin, className }: VoiceChatProps) {
           {isOffline ? (
             <Button onClick={() => void join()} className="flex-1 gap-2" disabled={state === "fetching-token" || state === "connecting"}>
               <Phone className="w-4 h-4" />
-              Anslut
+              Connect
             </Button>
           ) : (
             <>
@@ -109,7 +109,7 @@ export function VoiceChat({ api, isAdmin, className }: VoiceChatProps) {
                     </span>
                   </TooltipTrigger>
                   {!canPublish && (
-                    <TooltipContent>Spectators kan endast lyssna</TooltipContent>
+                    <TooltipContent>Spectators can only listen</TooltipContent>
                   )}
                 </Tooltip>
               </TooltipProvider>
@@ -117,7 +117,7 @@ export function VoiceChat({ api, isAdmin, className }: VoiceChatProps) {
                 onClick={() => void leave()}
                 variant="outline"
                 size="icon"
-                title="Lämna"
+                title="Leave"
               >
                 <PhoneOff className="w-4 h-4" />
               </Button>
@@ -148,13 +148,13 @@ export function VoiceChat({ api, isAdmin, className }: VoiceChatProps) {
           <div className="flex items-center gap-2 mb-2">
             <Users className="w-4 h-4 text-muted-foreground" />
             <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-              Deltagare {isConnected && `(${participants.length})`}
+              Participants {isConnected && `(${participants.length})`}
             </span>
           </div>
           <ScrollArea className="no-drag flex-1 min-h-[56px]">
             {participants.length === 0 ? (
               <p className="text-xs text-muted-foreground py-2">
-                {isOffline ? "Anslut för att se vilka som är med" : "Inga andra deltagare"}
+                {isOffline ? "Connect to see who's in voice" : "No other participants"}
               </p>
             ) : (
               <div className="flex flex-col">
@@ -181,7 +181,7 @@ export function VoiceChat({ api, isAdmin, className }: VoiceChatProps) {
         {/* Role hint — only shown when the server actually denies publish */}
         {!canPublish && isConnected && (
           <p className="text-xs text-muted-foreground italic">
-            Du kan lyssna men inte tala.
+            You can listen but not talk.
           </p>
         )}
       </div>

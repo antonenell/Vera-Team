@@ -40,14 +40,14 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
     fun join() {
         if (!_hasMicPermission.value) {
             Log.w(TAG, "join() called without mic permission")
-            controller.setError("Mikrofon-tillstånd saknas")
+            controller.setError("Microphone permission required")
             return
         }
         startVoiceService()
         viewModelScope.launch {
             val token = repository.fetchToken()
             if (token == null) {
-                controller.setError("Kunde inte hämta token")
+                controller.setError("Couldn't get voice token")
                 stopVoiceService()
                 return@launch
             }
