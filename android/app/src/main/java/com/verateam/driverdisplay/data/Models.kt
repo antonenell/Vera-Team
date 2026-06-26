@@ -37,6 +37,14 @@ data class TrackFlag(
     @SerialName("updated_at") val updatedAt: String? = null
 )
 
+/** The recorded/cleaned track polyline for a track — an ordered list of [lng, lat] pairs. */
+@Serializable
+data class TrackPath(
+    @SerialName("track_id") val trackId: String? = null,
+    val path: List<List<Double>> = emptyList(),
+    @SerialName("updated_at") val updatedAt: String? = null
+)
+
 @Serializable
 data class GpsTelemetry(
     val id: String = "00000000-0000-0000-0000-000000000002",

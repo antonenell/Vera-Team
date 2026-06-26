@@ -128,6 +128,7 @@ fun DriverDisplayContent(
                     longitude = uiState.longitude,
                     isCarOnline = uiState.isConnected,
                     flags = uiState.flags,
+                    trackPath = uiState.trackPath,
                     selectedTrack = uiState.selectedTrack,
                     onTrackChange = onSelectTrack,
                     modifier = Modifier

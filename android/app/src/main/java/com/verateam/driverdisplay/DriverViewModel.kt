@@ -60,6 +60,7 @@ data class DriverUiState(
 
     // Flags
     val flags: List<TrackFlag> = emptyList(),
+    val trackPath: List<List<Double>> = emptyList(),  // recorded circuit polyline ([lng,lat] pairs)
     val selectedTrack: String = "silesia-ring"  // matches the web default
 )
 
@@ -352,26 +353,30 @@ class DriverViewModel(app: Application) : AndroidViewModel(app) {
     private fun fetchFlags() {
         viewModelScope.launch {
             try {
-                val flags = repository.fetchTrackFlags(_uiState.value.selectedTrack)
-                _uiState.value = _uiState.value.copy(flags = flags)
+                val track = _uiState.value.selectedTrack
+                val flags = repository.fetchTrackFlags(track)
+                val path = repository.fetchTrackPath(track)
+                _uiState.value = _uiState.value.copy(flags = flags, trackPath = path)
             } catch (e: Exception) {
-                Log.e(TAG, "Error fetching flags: ${e.message}")
+                Log.e(TAG, "Error fetching track data: ${e.message}")
             }
         }
     }
 
     /**
-     * Poll flags continuously for real-time updates from web app.
+     * Poll flags + the recorded track continuously for live updates from the web app.
      */
     private fun startFlagsPolling() {
         flagsPollingJob?.cancel()
         flagsPollingJob = viewModelScope.launch {
             while (isActive) {
                 try {
-                    val flags = repository.fetchTrackFlags(_uiState.value.selectedTrack)
-                    _uiState.value = _uiState.value.copy(flags = flags)
+                    val track = _uiState.value.selectedTrack
+                    val flags = repository.fetchTrackFlags(track)
+                    val path = repository.fetchTrackPath(track)
+                    _uiState.value = _uiState.value.copy(flags = flags, trackPath = path)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Flags polling error: ${e.message}")
+                    Log.e(TAG, "Track polling error: ${e.message}")
                 }
                 delay(FLAGS_POLL_INTERVAL_MS)
             }

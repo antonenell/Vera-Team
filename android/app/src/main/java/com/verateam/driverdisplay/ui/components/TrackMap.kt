@@ -26,7 +26,11 @@ import com.mapbox.maps.plugin.annotation.annotations
 import com.mapbox.maps.plugin.annotation.generated.PointAnnotation
 import com.mapbox.maps.plugin.annotation.generated.PointAnnotationManager
 import com.mapbox.maps.plugin.annotation.generated.PointAnnotationOptions
+import com.mapbox.maps.plugin.annotation.generated.PolylineAnnotation
+import com.mapbox.maps.plugin.annotation.generated.PolylineAnnotationManager
+import com.mapbox.maps.plugin.annotation.generated.PolylineAnnotationOptions
 import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
+import com.mapbox.maps.plugin.annotation.generated.createPolylineAnnotationManager
 import com.mapbox.maps.plugin.attribution.attribution
 import com.mapbox.maps.plugin.compass.compass
 import com.mapbox.maps.plugin.logo.logo
@@ -73,6 +77,7 @@ fun TrackMap(
     longitude: Double,
     isCarOnline: Boolean,
     flags: List<TrackFlag>,
+    trackPath: List<List<Double>> = emptyList(),
     selectedTrack: String = "silesia-ring",
     onTrackChange: (String) -> Unit = {},
     modifier: Modifier = Modifier
@@ -82,8 +87,10 @@ fun TrackMap(
 
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var pointAnnotationManager by remember { mutableStateOf<PointAnnotationManager?>(null) }
+    var polylineManager by remember { mutableStateOf<PolylineAnnotationManager?>(null) }
     var carAnnotation by remember { mutableStateOf<PointAnnotation?>(null) }
     var flagAnnotations by remember { mutableStateOf<List<PointAnnotation>>(emptyList()) }
+    var trackAnnotations by remember { mutableStateOf<List<PolylineAnnotation>>(emptyList()) }
     var isMapReady by remember { mutableStateOf(false) }
 
     val yellowColor = Color(0xFFEAB308).toArgb()
@@ -91,6 +98,7 @@ fun TrackMap(
     val blackColor = Color(0xFF1A1A1A).toArgb()
     val greyColor = Color(0xFF71717A).toArgb()
     val greenColor = Color(0xFF22C55E).toArgb()
+    val trackCasingColor = Color(0xFF052E1B).toArgb()
 
     // Recenter when the track changes.
     LaunchedEffect(selectedTrack) {
@@ -193,6 +201,8 @@ fun TrackMap(
                                         .bearing(MAP_BEARING)
                                         .build()
                                 )
+                                // Polyline manager first so the track line renders BELOW the flags/car.
+                                polylineManager = annotations.createPolylineAnnotationManager()
                                 pointAnnotationManager = annotations.createPointAnnotationManager()
                                 isMapReady = true
                             }
@@ -202,6 +212,28 @@ fun TrackMap(
                 )
             }
         }
+    }
+
+    // Render the recorded track polyline (green line + dark casing) from the DB.
+    LaunchedEffect(isMapReady, trackPath) {
+        if (!isMapReady) return@LaunchedEffect
+        val manager = polylineManager ?: return@LaunchedEffect
+        trackAnnotations.forEach { manager.delete(it) }
+        val points = trackPath.mapNotNull { p ->
+            if (p.size >= 2) Point.fromLngLat(p[0], p[1]) else null
+        }
+        if (points.size < 2) {
+            trackAnnotations = emptyList()
+            return@LaunchedEffect
+        }
+        val casing = manager.create(
+            PolylineAnnotationOptions().withPoints(points).withLineColor(trackCasingColor).withLineWidth(7.0)
+        )
+        val line = manager.create(
+            PolylineAnnotationOptions().withPoints(points).withLineColor(greenColor).withLineWidth(4.0)
+        )
+        trackAnnotations = listOf(casing, line)
+        Log.d(TAG, "Rendered track polyline with ${points.size} points")
     }
 
     // Render flags from their live database positions (not hardcoded).

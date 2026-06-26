@@ -65,6 +65,22 @@ class Repository {
         }
     }
 
+    // Fetch the recorded track polyline for a track (one row per track, [lng,lat] pairs).
+    suspend fun fetchTrackPath(trackId: String): List<List<Double>> {
+        return try {
+            val row = supabase.from("track_paths")
+                .select {
+                    filter { eq("track_id", trackId) }
+                }
+                .decodeSingleOrNull<TrackPath>()
+            row?.path ?: emptyList()
+        } catch (e: Exception) {
+            // Table may not exist yet (migration not applied) — just draw no track.
+            Log.e(TAG, "Error fetching track path: ${e.message}")
+            emptyList()
+        }
+    }
+
     // Update GPS telemetry
     suspend fun updateGpsTelemetry(
         latitude: Double,
